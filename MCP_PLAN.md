@@ -47,11 +47,16 @@ snapshots and migration-file diffs.
       schema_create_index/drop_index (via DDL endpoints so migrations get
       recorded — NOT via /query). Extend policy tests to assert the full
       mode matrix. Verify: check + tests.
-- [ ] 6. Integration e2e test `tests/integration.test.ts` (skips gracefully if
-      `trail` binary unavailable): build via cargo, temp depot, sandbox_create
-      against it, schema_create_table → `U*__*.sql` migration file appears,
-      sandbox_diff reports it, record CRUD works inside sandbox,
-      sandbox_destroy kills the child process. Verify: run it locally.
+- [!] 6. Integration e2e test `tests/integration.test.ts` is WRITTEN and
+      auto-skips when no `trail` binary exists (so unit `pnpm test` stays
+      green: 10 passed, 1 skipped). It could NOT be executed against a real
+      binary in this environment: building `trail` requires the assets
+      crate's build.rs to build the admin SPA, which fails on
+      `@antv/x6`/`tslib` under vite 8 + rolldown (pre-existing, unrelated to
+      this work; also the geos system lib is unavailable — worked around with
+      `--no-default-features --features=trailbase/wasm`). Run this suite in
+      CI or an environment where `trail` builds normally:
+      `cargo build --bin trail && pnpm -C examples/mcp-server test`.
 - [ ] 7. Docs + finalization: `examples/mcp-server/README.md` (modes, security
       model and its limits, `.mcp.json` snippet, sandbox workflow, remote-prod
       degradation), `skills/trailbase-sandbox.md`, entry in

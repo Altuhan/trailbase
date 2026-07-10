@@ -3,11 +3,14 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import type { Config } from "../config";
 import { withAudit } from "../audit";
+import { SandboxManager } from "../sandbox";
 
 export interface ToolContext {
   readonly config: Config;
   /// Lazily constructed, memoized TrailBase client for record APIs.
   client(): Promise<Client>;
+  /// Lifecycle owner of the (at most one) ephemeral sandbox instance.
+  readonly sandbox: SandboxManager;
 }
 
 export function newToolContext(
@@ -18,6 +21,7 @@ export function newToolContext(
   return {
     config,
     client: () => (client ??= connect(config)),
+    sandbox: new SandboxManager(config),
   };
 }
 

@@ -34,7 +34,7 @@ snapshots and migration-file diffs.
       /logs/list, /jobs, /info; POST /job/run, /query; DDL endpoints);
       `src/tools/admin-read.ts` — admin_tables, admin_config_get, admin_logs,
       admin_jobs, admin_info. Verify: check + unit tests.
-- [ ] 4. Sandbox lifecycle: `src/sandbox.ts` — snapshot main.db via node:sqlite
+- [x] 4. Sandbox lifecycle: `src/sandbox.ts` — snapshot main.db via node:sqlite
       `VACUUM INTO` (fallback: `sqlite3` CLI), assemble depot (copy
       config.textproto + migrations/, fresh data/secrets), create+promote
       sandbox admin via `trail` CLI, free port, spawn `trail run`, poll

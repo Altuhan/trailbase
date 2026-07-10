@@ -4,6 +4,7 @@ import { isTierEnabled } from "../policy";
 import type { ToolContext } from "./common";
 import { registerAdminReadTools } from "./admin-read";
 import { registerRecordsTools } from "./records";
+import { registerSandboxTools } from "./sandbox";
 
 /// Registers all tools whose tier is enabled for the configured mode.
 /// Admin-write and sandbox tools are added by later MCP_PLAN.md items.
@@ -15,5 +16,8 @@ export function registerAllTools(server: McpServer, ctx: ToolContext): void {
   }
   if (isTierEnabled(mode, "admin-read")) {
     registerAdminReadTools(server, ctx);
+  }
+  if (isTierEnabled(mode, "sandbox-mgmt")) {
+    registerSandboxTools(server, ctx);
   }
 }

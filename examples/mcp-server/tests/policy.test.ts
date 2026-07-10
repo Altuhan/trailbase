@@ -37,6 +37,13 @@ async function listToolNames(mode: Mode): Promise<string[]> {
   }
 }
 
+const SANDBOX_TOOLS = [
+  "sandbox_create",
+  "sandbox_destroy",
+  "sandbox_diff",
+  "sandbox_status",
+];
+
 const ADMIN_READ_TOOLS = [
   "admin_config_get",
   "admin_info",
@@ -75,10 +82,21 @@ describe("policy matrix", () => {
     }
   });
 
-  test("no admin or sandbox tools are exposed in prod-safe", async () => {
+  test("no admin tools are exposed in prod-safe", async () => {
     const names = await listToolNames("prod-safe");
     expect(names.filter((n) => n.startsWith("admin_"))).toEqual([]);
     expect(names.filter((n) => n.startsWith("schema_"))).toEqual([]);
+  });
+
+  test("sandbox management is exposed in prod modes but not inside a sandbox", async () => {
+    for (const mode of ["prod-safe", "prod-admin-readonly"] as const) {
+      const names = await listToolNames(mode);
+      for (const tool of SANDBOX_TOOLS) {
+        expect(names, `mode=${mode}`).toContain(tool);
+      }
+    }
+    const names = await listToolNames("sandbox");
+    expect(names.filter((n) => n.startsWith("sandbox_"))).toEqual([]);
   });
 
   test("prod-admin-readonly exposes read-only admin tools", async () => {

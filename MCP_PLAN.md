@@ -42,7 +42,7 @@ snapshots and migration-file diffs.
       `src/tools/sandbox.ts` — sandbox_create/status/diff/destroy.
       Unit test `tests/sandbox_assembly.test.ts` (no server needed).
       Verify: check + unit tests.
-- [ ] 5. Sandbox-gated write tools: `src/tools/admin-write.ts` — admin_query,
+- [x] 5. Sandbox-gated write tools: `src/tools/admin-write.ts` — admin_query,
       admin_config_set, schema_create_table/alter_table/drop_table,
       schema_create_index/drop_index (via DDL endpoints so migrations get
       recorded — NOT via /query). Extend policy tests to assert the full

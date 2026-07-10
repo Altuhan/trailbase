@@ -18,10 +18,16 @@ export function newToolContext(
   connect: (config: Config) => Promise<Client>,
 ): ToolContext {
   let client: Promise<Client> | undefined;
+  const sandbox = new SandboxManager(config);
   return {
     config,
-    client: () => (client ??= connect(config)),
-    sandbox: new SandboxManager(config),
+    // In sandbox mode all data access targets the ephemeral sandbox instance,
+    // never the configured (snapshot-source) URL.
+    client: () =>
+      config.mode === "sandbox"
+        ? Promise.resolve(sandbox.recordClient())
+        : (client ??= connect(config)),
+    sandbox,
   };
 }
 

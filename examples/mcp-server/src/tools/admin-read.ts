@@ -4,12 +4,17 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AdminClient } from "../admin-client";
 import { jsonResult, toolHandler, type ToolContext } from "./common";
 
-/// Resolves an admin client from explicit TRAILBASE_ADMIN_TOKEN or, as a
-/// fallback, from the record-API user's current auth token (useful when that
-/// user is an admin, e.g. inside a sandbox). Admin-ness itself is enforced
-/// server-side on every request.
+/// Resolves the admin client for the current mode. In sandbox mode this is
+/// always the ephemeral sandbox instance (so admin operations never touch the
+/// snapshot source). Otherwise it uses TRAILBASE_ADMIN_TOKEN or, as a
+/// fallback, the record-API user's auth token. Admin-ness is enforced
+/// server-side on every request regardless.
 export async function adminClient(ctx: ToolContext): Promise<AdminClient> {
   const config = ctx.config;
+  if (config.mode === "sandbox") {
+    return ctx.sandbox.adminClient();
+  }
+
   if (config.adminToken !== undefined) {
     return AdminClient.fromToken(config.url, config.adminToken);
   }

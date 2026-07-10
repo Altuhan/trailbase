@@ -63,14 +63,36 @@ const RECORDS_TOOLS = [
 ];
 
 describe("policy matrix", () => {
+  const ADMIN_WRITE_TOOLS = [
+    "admin_query",
+    "admin_config_set",
+    "schema_create_table",
+    "schema_alter_table",
+    "schema_drop_table",
+    "schema_create_index",
+    "schema_drop_index",
+  ];
+
   test("tier sets per mode", () => {
     expect(enabledTiers("prod-safe")).toEqual(new Set(["records", "sandbox-mgmt"]));
     expect(enabledTiers("prod-admin-readonly")).toEqual(
       new Set(["records", "admin-read", "sandbox-mgmt"]),
     );
     expect(enabledTiers("sandbox")).toEqual(
-      new Set(["records", "admin-read", "admin-write"]),
+      new Set(["records", "admin-read", "admin-write", "sandbox-mgmt"]),
     );
+  });
+
+  test("write tools exist only in sandbox mode", async () => {
+    expect(await listToolNames("sandbox")).toEqual(
+      expect.arrayContaining(ADMIN_WRITE_TOOLS),
+    );
+    for (const mode of ["prod-safe", "prod-admin-readonly"] as const) {
+      const names = await listToolNames(mode);
+      for (const tool of ADMIN_WRITE_TOOLS) {
+        expect(names, `mode=${mode}`).not.toContain(tool);
+      }
+    }
   });
 
   test("records tools are registered in every mode", async () => {
@@ -88,15 +110,13 @@ describe("policy matrix", () => {
     expect(names.filter((n) => n.startsWith("schema_"))).toEqual([]);
   });
 
-  test("sandbox management is exposed in prod modes but not inside a sandbox", async () => {
-    for (const mode of ["prod-safe", "prod-admin-readonly"] as const) {
+  test("sandbox management is exposed in every mode", async () => {
+    for (const mode of MODES) {
       const names = await listToolNames(mode);
       for (const tool of SANDBOX_TOOLS) {
         expect(names, `mode=${mode}`).toContain(tool);
       }
     }
-    const names = await listToolNames("sandbox");
-    expect(names.filter((n) => n.startsWith("sandbox_"))).toEqual([]);
   });
 
   test("prod-admin-readonly exposes read-only admin tools", async () => {

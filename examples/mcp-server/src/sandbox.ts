@@ -200,6 +200,11 @@ export class SandboxManager {
     return AdminClient.fromToken(active.manifest.url, token);
   }
 
+  /// Record-API client against the running sandbox (the sandbox admin).
+  recordClient(): Client {
+    return this.require().client;
+  }
+
   private require(): ActiveSandbox {
     const active = this.active;
     if (active === undefined) {

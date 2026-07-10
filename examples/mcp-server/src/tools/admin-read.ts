@@ -29,7 +29,10 @@ export async function adminClient(ctx: ToolContext): Promise<AdminClient> {
   return AdminClient.fromToken(config.url, token);
 }
 
-export function registerAdminReadTools(server: McpServer, ctx: ToolContext): void {
+export function registerAdminReadTools(
+  server: McpServer,
+  ctx: ToolContext,
+): void {
   server.registerTool(
     "admin_tables",
     {
@@ -88,7 +91,8 @@ export function registerAdminReadTools(server: McpServer, ctx: ToolContext): voi
     "admin_info",
     {
       title: "Instance info",
-      description: "Fetches build and runtime metadata of the TrailBase instance.",
+      description:
+        "Fetches build and runtime metadata of the TrailBase instance.",
       inputSchema: {},
     },
     toolHandler("admin_info", async () => {

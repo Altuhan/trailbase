@@ -23,7 +23,8 @@ async function listToolNames(mode: Mode): Promise<string[]> {
   });
   registerAllTools(server, ctx);
 
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
 
   const client = new McpClient({ name: "test-client", version: "0.0.0" });
@@ -74,7 +75,9 @@ describe("policy matrix", () => {
   ];
 
   test("tier sets per mode", () => {
-    expect(enabledTiers("prod-safe")).toEqual(new Set(["records", "sandbox-mgmt"]));
+    expect(enabledTiers("prod-safe")).toEqual(
+      new Set(["records", "sandbox-mgmt"]),
+    );
     expect(enabledTiers("prod-admin-readonly")).toEqual(
       new Set(["records", "admin-read", "sandbox-mgmt"]),
     );

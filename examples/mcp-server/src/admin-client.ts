@@ -146,7 +146,12 @@ export class AdminClient {
   async updateConfig(config: unknown, hash: string): Promise<void> {
     const message = UpdateConfigRequest.fromJSON({ config, hash });
     const body = UpdateConfigRequest.encode(message).finish();
-    await this.request("POST", "/config", body as BodyInit, "application/octet-stream");
+    await this.request(
+      "POST",
+      "/config",
+      body as BodyInit,
+      "application/octet-stream",
+    );
   }
 
   /// Executes arbitrary SQL on the instance (writer connection!). Only ever

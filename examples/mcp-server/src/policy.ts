@@ -1,6 +1,11 @@
 import type { Mode } from "./config";
 
-export const TIERS = ["records", "admin-read", "admin-write", "sandbox-mgmt"] as const;
+export const TIERS = [
+  "records",
+  "admin-read",
+  "admin-write",
+  "sandbox-mgmt",
+] as const;
 
 /// Coarse capability tiers tools belong to:
 ///  - "records": record API CRUD + schema, enforced server-side by ACLs.

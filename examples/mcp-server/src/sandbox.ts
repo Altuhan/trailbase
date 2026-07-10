@@ -59,7 +59,10 @@ function sqlQuoteSingle(value: string): string {
 /// Takes a transactionally consistent snapshot of a (potentially live, WAL)
 /// SQLite database using `VACUUM INTO`. Prefers the built-in `node:sqlite`
 /// and falls back to the `sqlite3` CLI.
-export async function snapshotSqliteDb(source: string, dest: string): Promise<void> {
+export async function snapshotSqliteDb(
+  source: string,
+  dest: string,
+): Promise<void> {
   const vacuum = `VACUUM INTO ${sqlQuoteSingle(dest)}`;
 
   let nodeSqliteError: unknown;
@@ -108,7 +111,10 @@ function readConfig(dataDir: string): string | undefined {
 export async function assembleSandboxDepot(
   sourceDataDir: string,
   sandboxDir: string,
-): Promise<{ baselineMigrations: string[]; baselineConfig: string | undefined }> {
+): Promise<{
+  baselineMigrations: string[];
+  baselineConfig: string | undefined;
+}> {
   const sourceDb = join(sourceDataDir, "data", "main.db");
   if (!existsSync(sourceDb)) {
     throw new SandboxError(
@@ -126,7 +132,9 @@ export async function assembleSandboxDepot(
 
   const sourceMigrations = join(sourceDataDir, "migrations");
   if (existsSync(sourceMigrations)) {
-    cpSync(sourceMigrations, join(sandboxDir, "migrations"), { recursive: true });
+    cpSync(sourceMigrations, join(sandboxDir, "migrations"), {
+      recursive: true,
+    });
   }
 
   return {
@@ -142,7 +150,9 @@ async function freePort(): Promise<number> {
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       if (address === null || typeof address === "string") {
-        server.close(() => reject(new SandboxError("Could not allocate a port.")));
+        server.close(() =>
+          reject(new SandboxError("Could not allocate a port.")),
+        );
         return;
       }
       server.close(() => resolvePort(address.port));
@@ -208,12 +218,16 @@ export class SandboxManager {
   private require(): ActiveSandbox {
     const active = this.active;
     if (active === undefined) {
-      throw new SandboxError("No active sandbox. Create one with sandbox_create.");
+      throw new SandboxError(
+        "No active sandbox. Create one with sandbox_create.",
+      );
     }
     return active;
   }
 
-  async create(opts: { sourceDataDir?: string } = {}): Promise<SandboxManifest> {
+  async create(
+    opts: { sourceDataDir?: string } = {},
+  ): Promise<SandboxManifest> {
     if (this.active !== undefined) {
       throw new SandboxError(
         `A sandbox is already running at ${this.active.manifest.url}; destroy it first (sandbox_destroy).`,
@@ -239,8 +253,21 @@ export class SandboxManager {
       // applies pending migrations and generates fresh keys.
       const adminPassword = randomBytes(24).toString("base64url");
       const trail = this.config.trailBin;
-      await spawn(trail, ["--data-dir", sandboxDir, "user", "add", SANDBOX_ADMIN_EMAIL, adminPassword]);
-      await spawn(trail, ["--data-dir", sandboxDir, "admin", "promote", SANDBOX_ADMIN_EMAIL]);
+      await spawn(trail, [
+        "--data-dir",
+        sandboxDir,
+        "user",
+        "add",
+        SANDBOX_ADMIN_EMAIL,
+        adminPassword,
+      ]);
+      await spawn(trail, [
+        "--data-dir",
+        sandboxDir,
+        "admin",
+        "promote",
+        SANDBOX_ADMIN_EMAIL,
+      ]);
 
       const port = await freePort();
       const address = `127.0.0.1:${port}`;
@@ -259,7 +286,9 @@ export class SandboxManager {
         const client = initClient(url);
         const mfa = await client.login(SANDBOX_ADMIN_EMAIL, adminPassword);
         if (mfa !== undefined) {
-          throw new SandboxError("Unexpected MFA challenge for the sandbox admin.");
+          throw new SandboxError(
+            "Unexpected MFA challenge for the sandbox admin.",
+          );
         }
 
         const manifest: SandboxManifest = {
@@ -271,7 +300,10 @@ export class SandboxManager {
           adminEmail: SANDBOX_ADMIN_EMAIL,
           baselineMigrations,
         };
-        writeFileSync(join(sandboxDir, MANIFEST_FILE), JSON.stringify(manifest, null, 2));
+        writeFileSync(
+          join(sandboxDir, MANIFEST_FILE),
+          JSON.stringify(manifest, null, 2),
+        );
 
         this.active = { manifest, child, client, baselineConfig };
         this.exitHook = () => child.kill("SIGTERM");
@@ -317,7 +349,10 @@ export class SandboxManager {
       .filter((file) => !baseline.has(file))
       .map((file) => ({
         file: join("migrations", "main", file),
-        content: readFileSync(join(manifest.dataDir, "migrations", "main", file), "utf8"),
+        content: readFileSync(
+          join(manifest.dataDir, "migrations", "main", file),
+          "utf8",
+        ),
       }));
 
     const configAfter = readConfig(manifest.dataDir);
@@ -330,7 +365,9 @@ export class SandboxManager {
     };
   }
 
-  async destroy(opts: { keepDir?: boolean } = {}): Promise<{ dataDir: string; removed: boolean }> {
+  async destroy(
+    opts: { keepDir?: boolean } = {},
+  ): Promise<{ dataDir: string; removed: boolean }> {
     const active = this.require();
     const { manifest, child } = active;
 

@@ -3,7 +3,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { jsonResult, toolHandler, type ToolContext } from "./common";
 
-export function registerSandboxTools(server: McpServer, ctx: ToolContext): void {
+export function registerSandboxTools(
+  server: McpServer,
+  ctx: ToolContext,
+): void {
   server.registerTool(
     "sandbox_create",
     {

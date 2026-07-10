@@ -1,4 +1,11 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -19,7 +26,10 @@ function createSourceDepot(dir: string): void {
   db.exec("INSERT INTO article (title) VALUES ('hello'), ('world')");
   db.close();
 
-  writeFileSync(join(dir, "config.textproto"), 'email { sender_name: "Test" }\n');
+  writeFileSync(
+    join(dir, "config.textproto"),
+    'email { sender_name: "Test" }\n',
+  );
   writeFileSync(
     join(dir, "migrations", "main", "U1__create_article.sql"),
     "CREATE TABLE article (id INTEGER PRIMARY KEY, title TEXT NOT NULL);\n",
@@ -61,19 +71,23 @@ describe("assembleSandboxDepot", () => {
     );
 
     expect(existsSync(join(sandboxDir, "data", "main.db"))).toBe(true);
-    expect(readFileSync(join(sandboxDir, "config.textproto"), "utf8")).toContain(
-      "sender_name",
-    );
-    expect(existsSync(join(sandboxDir, "migrations", "main", "U1__create_article.sql"))).toBe(
-      true,
-    );
+    expect(
+      readFileSync(join(sandboxDir, "config.textproto"), "utf8"),
+    ).toContain("sender_name");
+    expect(
+      existsSync(
+        join(sandboxDir, "migrations", "main", "U1__create_article.sql"),
+      ),
+    ).toBe(true);
     // Fresh keys/sessions by design: secrets must never be copied.
     expect(existsSync(join(sandboxDir, "secrets"))).toBe(false);
 
     expect(baselineMigrations).toEqual(["U1__create_article.sql"]);
     expect(baselineConfig).toContain("sender_name");
 
-    const db = new DatabaseSync(join(sandboxDir, "data", "main.db"), { readOnly: true });
+    const db = new DatabaseSync(join(sandboxDir, "data", "main.db"), {
+      readOnly: true,
+    });
     try {
       const row = db.prepare("SELECT COUNT(*) AS n FROM article").get();
       expect(row).toEqual({ n: 2 });

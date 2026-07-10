@@ -57,7 +57,7 @@ snapshots and migration-file diffs.
       `--no-default-features --features=trailbase/wasm`). Run this suite in
       CI or an environment where `trail` builds normally:
       `cargo build --bin trail && pnpm -C examples/mcp-server test`.
-- [ ] 7. Docs + finalization: `examples/mcp-server/README.md` (modes, security
+- [x] 7. Docs + finalization: `examples/mcp-server/README.md` (modes, security
       model and its limits, `.mcp.json` snippet, sandbox workflow, remote-prod
       degradation), `skills/trailbase-sandbox.md`, entry in
       `examples/README.md`; run repo formatters (prettier); final push and a

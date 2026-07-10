@@ -2,7 +2,12 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Filter, ListOpts } from "trailbase";
 
-import { jsonResult, textResult, toolHandler, type ToolContext } from "./common";
+import {
+  jsonResult,
+  textResult,
+  toolHandler,
+  type ToolContext,
+} from "./common";
 
 const COMPARE_OPS = [
   "equal",
@@ -37,7 +42,10 @@ const filterSchema = z.object({
     .describe("Value to compare against, always passed as a string"),
 });
 
-export function registerRecordsTools(server: McpServer, ctx: ToolContext): void {
+export function registerRecordsTools(
+  server: McpServer,
+  ctx: ToolContext,
+): void {
   server.registerTool(
     "records_list",
     {
@@ -47,7 +55,10 @@ export function registerRecordsTools(server: McpServer, ctx: ToolContext): void 
       inputSchema: {
         api: apiName,
         limit: z.number().int().positive().optional(),
-        cursor: z.string().optional().describe("Cursor from a previous response"),
+        cursor: z
+          .string()
+          .optional()
+          .describe("Cursor from a previous response"),
         offset: z.number().int().nonnegative().optional(),
         order: z
           .array(z.string())

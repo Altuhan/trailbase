@@ -10,7 +10,10 @@ function sandboxAdmin(ctx: ToolContext) {
   return ctx.sandbox.adminClient();
 }
 
-export function registerAdminWriteTools(server: McpServer, ctx: ToolContext): void {
+export function registerAdminWriteTools(
+  server: McpServer,
+  ctx: ToolContext,
+): void {
   server.registerTool(
     "admin_query",
     {
@@ -59,7 +62,9 @@ export function registerAdminWriteTools(server: McpServer, ctx: ToolContext): vo
       description:
         "Creates a table in the sandbox. `schema` is a TrailBase table definition (same shape as an entry returned by admin_tables — inspect that first). Records a migration file unless dry_run.",
       inputSchema: {
-        schema: z.record(z.string(), z.unknown()).describe("TrailBase Table schema object"),
+        schema: z
+          .record(z.string(), z.unknown())
+          .describe("TrailBase Table schema object"),
         dry_run: dryRun,
       },
     },
@@ -100,7 +105,8 @@ export function registerAdminWriteTools(server: McpServer, ctx: ToolContext): vo
     "schema_drop_table",
     {
       title: "Drop table (sandbox)",
-      description: "Drops a table in the sandbox. Records a migration file unless dry_run.",
+      description:
+        "Drops a table in the sandbox. Records a migration file unless dry_run.",
       inputSchema: {
         name: z.string().min(1),
         dry_run: dryRun,
@@ -123,7 +129,9 @@ export function registerAdminWriteTools(server: McpServer, ctx: ToolContext): vo
       description:
         "Creates an index in the sandbox. `schema` is a TrailBase index definition. Records a migration file unless dry_run.",
       inputSchema: {
-        schema: z.record(z.string(), z.unknown()).describe("TrailBase TableIndex schema object"),
+        schema: z
+          .record(z.string(), z.unknown())
+          .describe("TrailBase TableIndex schema object"),
         dry_run: dryRun,
       },
     },
@@ -141,7 +149,8 @@ export function registerAdminWriteTools(server: McpServer, ctx: ToolContext): vo
     "schema_drop_index",
     {
       title: "Drop index (sandbox)",
-      description: "Drops an index in the sandbox. Records a migration file unless dry_run.",
+      description:
+        "Drops an index in the sandbox. Records a migration file unless dry_run.",
       inputSchema: {
         name: z.string().min(1),
         dry_run: dryRun,

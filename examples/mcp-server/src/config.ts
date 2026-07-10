@@ -45,7 +45,9 @@ export interface Config {
 
 export class ConfigError extends Error {}
 
-export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
+export function loadConfig(
+  env: Record<string, string | undefined> = process.env,
+): Config {
   const parsed = envSchema.safeParse(env);
   if (!parsed.success) {
     const issues = parsed.error.issues
@@ -59,11 +61,18 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   try {
     url = new URL(e.TRAILBASE_URL);
   } catch {
-    throw new ConfigError(`TRAILBASE_URL is not a valid URL: '${e.TRAILBASE_URL}'`);
+    throw new ConfigError(
+      `TRAILBASE_URL is not a valid URL: '${e.TRAILBASE_URL}'`,
+    );
   }
 
-  if ((e.TRAILBASE_USER === undefined) !== (e.TRAILBASE_PASSWORD === undefined)) {
-    throw new ConfigError("TRAILBASE_USER and TRAILBASE_PASSWORD must be set together.");
+  if (
+    (e.TRAILBASE_USER === undefined) !==
+    (e.TRAILBASE_PASSWORD === undefined)
+  ) {
+    throw new ConfigError(
+      "TRAILBASE_USER and TRAILBASE_PASSWORD must be set together.",
+    );
   }
 
   return {

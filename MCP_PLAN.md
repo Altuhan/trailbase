@@ -24,7 +24,7 @@ snapshots and migration-file diffs.
       (mode→tool matrix), `src/audit.ts` (stderr JSONL), minimal `src/index.ts`
       (McpServer + StdioServerTransport, no tools yet).
       Verify: `pnpm i` and `pnpm -C examples/mcp-server check` pass.
-- [ ] 2. Records tools + auth: `src/tools/records.ts` — records_list (filters,
+- [x] 2. Records tools + auth: `src/tools/records.ts` — records_list (filters,
       order, pagination, count), records_read, records_create, records_update,
       records_delete, records_schema, auth_status; client construction from
       config (login or pre-issued tokens). Unit test `tests/policy.test.ts`

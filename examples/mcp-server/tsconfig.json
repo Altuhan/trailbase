@@ -4,6 +4,11 @@
     "module": "es2022",
     "moduleResolution": "bundler",
     "outDir": "./dist/",
+    "paths": {
+      // Path alias used inside the workspace `trailbase` client sources,
+      // which tsc follows when type-checking this package.
+      "@bindings/*": ["../../crates/assets/js/client/bindings/*"]
+    },
     "types": ["node"],
     "forceConsistentCasingInFileNames": true,
     "strict": true,

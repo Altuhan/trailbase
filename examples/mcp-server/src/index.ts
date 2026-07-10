@@ -3,6 +3,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { loadConfig } from "./config";
 import { enabledTiers } from "./policy";
+import { connect } from "./trailbase";
+import { newToolContext } from "./tools/common";
+import { registerAllTools } from "./tools";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -12,8 +15,7 @@ async function main(): Promise<void> {
     version: "0.1.0",
   });
 
-  // Tool registration (records, admin, sandbox) is added tier-by-tier; see
-  // MCP_PLAN.md for the implementation backlog.
+  registerAllTools(server, newToolContext(config, connect));
 
   await server.connect(new StdioServerTransport());
 

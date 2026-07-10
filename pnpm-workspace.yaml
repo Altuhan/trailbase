@@ -12,6 +12,7 @@ packages:
   - 'examples/collab-clicker-ssr'
   - 'examples/collab-clicker-ssr/guests/typescript'
   - 'examples/data-cli-tutorial'
+  - 'examples/mcp-server'
   - 'examples/tanstack-db-sync'
   - 'examples/wasm-guest-js'
   - 'examples/wasm-guest-ts'

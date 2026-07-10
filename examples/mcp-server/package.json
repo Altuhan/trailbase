@@ -1,0 +1,34 @@
+{
+  "name": "trailbase-mcp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MCP server exposing safe, mode-gated access to a TrailBase instance for AI agents",
+  "type": "module",
+  "license": "OSL-3.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "vite build",
+    "check": "tsc --noEmit --skipLibCheck && eslint",
+    "format": "prettier -w src tests",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "nano-spawn": "^2.1.0",
+    "trailbase": "workspace:*",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.1",
+    "eslint": "^10.6.0",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.63.0",
+    "vite": "^8.1.3",
+    "vitest": "^4.1.10"
+  }
+}

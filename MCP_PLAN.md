@@ -13,7 +13,7 @@ APIs only, server-enforced ACLs via a dedicated non-admin user),
 lifecycle tools (`sandbox_create/status/diff/destroy`) built on `VACUUM INTO`
 snapshots and migration-file diffs.
 
-- [ ] 1. Package scaffold at `examples/mcp-server/`: package.json (name
+- [x] 1. Package scaffold at `examples/mcp-server/`: package.json (name
       `trailbase-mcp`, node >= 22; deps: `@modelcontextprotocol/sdk`, `zod`,
       `trailbase` workspace client, `nano-spawn`; dev: typescript, eslint,
       prettier, vitest), tsconfig/eslint/prettier configs modeled after

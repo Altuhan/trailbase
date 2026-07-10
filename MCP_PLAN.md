@@ -29,7 +29,7 @@ snapshots and migration-file diffs.
       records_delete, records_schema, auth_status; client construction from
       config (login or pre-issued tokens). Unit test `tests/policy.test.ts`
       for mode gating. Verify: check + `pnpm -C examples/mcp-server test`.
-- [ ] 3. Admin client + read tools: `src/admin-client.ts` (fetch wrapper,
+- [x] 3. Admin client + read tools: `src/admin-client.ts` (fetch wrapper,
       Bearer + CSRF-Token from JWT claims; GET /api/_admin/tables, /config,
       /logs/list, /jobs, /info; POST /job/run, /query; DDL endpoints);
       `src/tools/admin-read.ts` — admin_tables, admin_config_get, admin_logs,

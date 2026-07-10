@@ -37,6 +37,14 @@ async function listToolNames(mode: Mode): Promise<string[]> {
   }
 }
 
+const ADMIN_READ_TOOLS = [
+  "admin_config_get",
+  "admin_info",
+  "admin_jobs",
+  "admin_logs",
+  "admin_tables",
+];
+
 const RECORDS_TOOLS = [
   "auth_status",
   "records_create",
@@ -67,9 +75,27 @@ describe("policy matrix", () => {
     }
   });
 
-  test("no admin or sandbox tools are exposed yet in prod-safe", async () => {
+  test("no admin or sandbox tools are exposed in prod-safe", async () => {
     const names = await listToolNames("prod-safe");
     expect(names.filter((n) => n.startsWith("admin_"))).toEqual([]);
     expect(names.filter((n) => n.startsWith("schema_"))).toEqual([]);
+  });
+
+  test("prod-admin-readonly exposes read-only admin tools", async () => {
+    const names = await listToolNames("prod-admin-readonly");
+    for (const tool of ADMIN_READ_TOOLS) {
+      expect(names).toContain(tool);
+    }
+    // No arbitrary SQL, DDL, config mutation or user management.
+    expect(names).not.toContain("admin_query");
+    expect(names.filter((n) => n.startsWith("schema_"))).toEqual([]);
+    expect(names).not.toContain("admin_config_set");
+  });
+
+  test("sandbox mode exposes admin-read tools", async () => {
+    const names = await listToolNames("sandbox");
+    for (const tool of ADMIN_READ_TOOLS) {
+      expect(names).toContain(tool);
+    }
   });
 });

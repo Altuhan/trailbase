@@ -1,0 +1,326 @@
+{
+  "label": "B-backup-off",
+  "binary": "/tmp/claude-0/-home-user-trailbase/91dc49f9-6eb5-50c2-9dc9-8f257d74f6d9/scratchpad/ab/trail-B",
+  "binary_sha256": "1ca7554cd6950f99ced232e820f86ddc51bee435d812283f75ff08101df64e41",
+  "server_env": {},
+  "node": "v22.22.2",
+  "created_at": "2026-07-11T21:51:04.633Z",
+  "golden": [
+    {
+      "step": "healthcheck",
+      "status": 200,
+      "body": "Ok"
+    },
+    {
+      "step": "login-rejected",
+      "status": 401,
+      "body": null
+    },
+    {
+      "step": "login",
+      "status": 200,
+      "body": [
+        "auth_token",
+        "csrf_token",
+        "refresh_token"
+      ]
+    },
+    {
+      "step": "ddl-create-table",
+      "status": 200,
+      "body": {
+        "columns": null,
+        "rows": []
+      }
+    },
+    {
+      "step": "insert-batch-0",
+      "status": 200,
+      "body": {
+        "columns": null,
+        "rows": []
+      }
+    },
+    {
+      "step": "insert-batch-1",
+      "status": 200,
+      "body": {
+        "columns": null,
+        "rows": []
+      }
+    },
+    {
+      "step": "insert-batch-2",
+      "status": 200,
+      "body": {
+        "columns": null,
+        "rows": []
+      }
+    },
+    {
+      "step": "insert-batch-3",
+      "status": 200,
+      "body": {
+        "columns": null,
+        "rows": []
+      }
+    },
+    {
+      "step": "select-aggregate",
+      "status": 200,
+      "body": {
+        "columns": [
+          {
+            "affinity_type": "Numeric",
+            "data_type": "Any",
+            "name": "n",
+            "options": [],
+            "type_name": ""
+          },
+          {
+            "affinity_type": "Numeric",
+            "data_type": "Any",
+            "name": "total",
+            "options": [],
+            "type_name": ""
+          }
+        ],
+        "rows": [
+          [
+            {
+              "Integer": 100
+            },
+            {
+              "Integer": 4950
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "step": "select-filtered",
+      "status": 200,
+      "body": {
+        "columns": [
+          {
+            "affinity_type": "Integer",
+            "data_type": "Integer",
+            "name": "id",
+            "options": [],
+            "type_name": ""
+          },
+          {
+            "affinity_type": "Text",
+            "data_type": "Text",
+            "name": "name",
+            "options": [],
+            "type_name": ""
+          },
+          {
+            "affinity_type": "Integer",
+            "data_type": "Integer",
+            "name": "qty",
+            "options": [],
+            "type_name": ""
+          }
+        ],
+        "rows": [
+          [
+            {
+              "Integer": 8
+            },
+            {
+              "Text": "item-0008"
+            },
+            {
+              "Integer": 56
+            }
+          ],
+          [
+            {
+              "Integer": 9
+            },
+            {
+              "Text": "item-0009"
+            },
+            {
+              "Integer": 63
+            }
+          ],
+          [
+            {
+              "Integer": 10
+            },
+            {
+              "Text": "item-0010"
+            },
+            {
+              "Integer": 70
+            }
+          ],
+          [
+            {
+              "Integer": 11
+            },
+            {
+              "Text": "item-0011"
+            },
+            {
+              "Integer": 77
+            }
+          ],
+          [
+            {
+              "Integer": 12
+            },
+            {
+              "Text": "item-0012"
+            },
+            {
+              "Integer": 84
+            }
+          ],
+          [
+            {
+              "Integer": 13
+            },
+            {
+              "Text": "item-0013"
+            },
+            {
+              "Integer": 91
+            }
+          ],
+          [
+            {
+              "Integer": 14
+            },
+            {
+              "Text": "item-0014"
+            },
+            {
+              "Integer": 98
+            }
+          ],
+          [
+            {
+              "Integer": 22
+            },
+            {
+              "Text": "item-0022"
+            },
+            {
+              "Integer": 54
+            }
+          ],
+          [
+            {
+              "Integer": 23
+            },
+            {
+              "Text": "item-0023"
+            },
+            {
+              "Integer": 61
+            }
+          ],
+          [
+            {
+              "Integer": 24
+            },
+            {
+              "Text": "item-0024"
+            },
+            {
+              "Integer": 68
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "step": "update-rows",
+      "status": 200,
+      "body": {
+        "columns": null,
+        "rows": []
+      }
+    },
+    {
+      "step": "delete-rows",
+      "status": 200,
+      "body": {
+        "columns": null,
+        "rows": []
+      }
+    },
+    {
+      "step": "select-after-mutations",
+      "status": 200,
+      "body": {
+        "columns": [
+          {
+            "affinity_type": "Numeric",
+            "data_type": "Any",
+            "name": "n",
+            "options": [],
+            "type_name": ""
+          },
+          {
+            "affinity_type": "Numeric",
+            "data_type": "Any",
+            "name": "total",
+            "options": [],
+            "type_name": ""
+          }
+        ],
+        "rows": [
+          [
+            {
+              "Integer": 90
+            },
+            {
+              "Integer": 4374
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "step": "admin-tables",
+      "status": 200,
+      "body": [
+        "main._file_deletions",
+        "main._schema_history",
+        "main._user",
+        "main._user_avatar",
+        "main.contour_items",
+        "main.sqlite_stat1",
+        "main.sqlite_stat4"
+      ]
+    }
+  ],
+  "metrics": {
+    "healthcheck": {
+      "count": 1500,
+      "mean_us": 726,
+      "p50_us": 689,
+      "p95_us": 863,
+      "p99_us": 1543,
+      "max_us": 4512
+    },
+    "admin_query": {
+      "count": 1000,
+      "mean_us": 14742,
+      "p50_us": 14503,
+      "p95_us": 15343,
+      "p99_us": 18711,
+      "max_us": 34186
+    },
+    "throughput_rps": 5371,
+    "rss_kb_idle": 93208,
+    "rss_kb_after_load": 98116,
+    "fds_idle": 39,
+    "fds_after_load": 54
+  }
+}

@@ -35,13 +35,16 @@ const ADMIN_PASSWORD = "contour-password-1";
 const HEALTH_TIMEOUT_MS = 60_000;
 
 const LATENCY_WARMUP = 100;
-const LATENCY_SAMPLES = 500;
-const QUERY_SAMPLES = 250;
+const LATENCY_SAMPLES = 1500;
+const QUERY_SAMPLES = 1000;
 const THROUGHPUT_WORKERS = 8;
 const THROUGHPUT_MS = 3_000;
 
-// Tolerances for `--compare` (fractions of the A value).
-const LATENCY_TOLERANCE = 0.05;
+// Tolerances for `--compare`. Medians are tight; p99 tails of debug builds
+// are dominated by OS-scheduler noise (observed ±20% across identical
+// binaries), so they only guard against gross regressions.
+const P50_TOLERANCE = { fraction: 0.05, slack_us: 100 };
+const P99_TOLERANCE = { fraction: 0.1, slack_us: 1000 };
 const RSS_TOLERANCE = 0.05;
 
 function fail(message) {
@@ -478,14 +481,16 @@ function compare(pathA, pathB) {
   }
 
   const checkLatency = (name, metricA, metricB) => {
-    for (const key of ["p50_us", "p99_us"]) {
+    for (const [key, tolerance] of [
+      ["p50_us", P50_TOLERANCE],
+      ["p99_us", P99_TOLERANCE],
+    ]) {
       const va = metricA[key];
       const vb = metricB[key];
-      // Sub-millisecond debug-build jitter: also allow a small absolute slack.
-      const allowed = va * (1 + LATENCY_TOLERANCE) + 100;
+      const allowed = va * (1 + tolerance.fraction) + tolerance.slack_us;
       if (vb > allowed) {
         failures.push(
-          `${name}.${key}: B=${Math.round(vb)}us exceeds A=${Math.round(va)}us +${LATENCY_TOLERANCE * 100}%+100us`,
+          `${name}.${key}: B=${Math.round(vb)}us exceeds A=${Math.round(va)}us +${tolerance.fraction * 100}%+${tolerance.slack_us}us`,
         );
       }
     }

@@ -1,0 +1,14 @@
+{"body":"Ok","status":200,"step":"healthcheck"}
+{"body":null,"status":401,"step":"login-rejected"}
+{"body":["auth_token","csrf_token","refresh_token"],"status":200,"step":"login"}
+{"body":{"columns":null,"rows":[]},"status":200,"step":"ddl-create-table"}
+{"body":{"columns":null,"rows":[]},"status":200,"step":"insert-batch-0"}
+{"body":{"columns":null,"rows":[]},"status":200,"step":"insert-batch-1"}
+{"body":{"columns":null,"rows":[]},"status":200,"step":"insert-batch-2"}
+{"body":{"columns":null,"rows":[]},"status":200,"step":"insert-batch-3"}
+{"body":{"columns":[{"affinity_type":"Numeric","data_type":"Any","name":"n","options":[],"type_name":""},{"affinity_type":"Numeric","data_type":"Any","name":"total","options":[],"type_name":""}],"rows":[[{"Integer":100},{"Integer":4950}]]},"status":200,"step":"select-aggregate"}
+{"body":{"columns":[{"affinity_type":"Integer","data_type":"Integer","name":"id","options":[],"type_name":""},{"affinity_type":"Text","data_type":"Text","name":"name","options":[],"type_name":""},{"affinity_type":"Integer","data_type":"Integer","name":"qty","options":[],"type_name":""}],"rows":[[{"Integer":8},{"Text":"item-0008"},{"Integer":56}],[{"Integer":9},{"Text":"item-0009"},{"Integer":63}],[{"Integer":10},{"Text":"item-0010"},{"Integer":70}],[{"Integer":11},{"Text":"item-0011"},{"Integer":77}],[{"Integer":12},{"Text":"item-0012"},{"Integer":84}],[{"Integer":13},{"Text":"item-0013"},{"Integer":91}],[{"Integer":14},{"Text":"item-0014"},{"Integer":98}],[{"Integer":22},{"Text":"item-0022"},{"Integer":54}],[{"Integer":23},{"Text":"item-0023"},{"Integer":61}],[{"Integer":24},{"Text":"item-0024"},{"Integer":68}]]},"status":200,"step":"select-filtered"}
+{"body":{"columns":null,"rows":[]},"status":200,"step":"update-rows"}
+{"body":{"columns":null,"rows":[]},"status":200,"step":"delete-rows"}
+{"body":{"columns":[{"affinity_type":"Numeric","data_type":"Any","name":"n","options":[],"type_name":""},{"affinity_type":"Numeric","data_type":"Any","name":"total","options":[],"type_name":""}],"rows":[[{"Integer":90},{"Integer":4374}]]},"status":200,"step":"select-after-mutations"}
+{"body":["main._file_deletions","main._schema_history","main._user","main._user_avatar","main.contour_items","main.sqlite_stat1","main.sqlite_stat4"],"status":200,"step":"admin-tables"}

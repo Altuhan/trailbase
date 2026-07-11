@@ -60,9 +60,16 @@ branch. Both built with `cargo build --bin trail --no-default-features`
 - [x] 7. Binary e2e on `TB_BACKUP_FS_DIR`: `trail` with tenant DBs and
       `TB_CONN_CACHE_CAPACITY=2`, files appear in the directory "bucket";
       restore drill: copy `latest/<name>.db` into a fresh data dir.
-- [ ] 8. A/B comparison: build B, run contour B(off) and B(on),
+- [x] 8. A/B comparison: build B, run contour B(off) and B(on),
       `--compare` against report A within tolerances; module README
-      (env/config reference, R2 setup, restore runbook).
+      (env/config reference, R2 setup, restore runbook). VERDICT: golden
+      byte-identical in both pairs; B(off) p50 healthcheck/admin-query
+      within noise of A (689 vs 661 us / 14.50 vs 14.54 ms), RSS +0.6%;
+      B(on) under *every-second* sweep churn matched or beat A (p99 1227
+      vs 1527 us, RSS lower). Investigation note: with 250-sample tails
+      the admin-query p99 fluctuated ±20% across identical binaries, so
+      the contour now uses 1000/1500 samples and split tolerances (p50
+      5%+100us strict, p99 10%+1ms). Feature docs: BACKUPS.md.
 - [ ] 9. Finalization: `cargo clippy --workspace --no-deps`, `cargo fmt`,
       full workspace test run, CHANGELOG entry, final summary.
 

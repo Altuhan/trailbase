@@ -34,6 +34,10 @@ runs:
     - name: PNPM install dependencies
       shell: bash
       run: |
+        # pnpm >= 10.34 clones git-hosted dependencies (admin's
+        # @tiledb-inc/wkx) via SSH, which runners have no keys for.
+        git config --global url."https://github.com/".insteadOf "git@github.com:"
+        git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/"
         pnpm install
 
     # NOTE: actions-rs/toolchain is archived and declares a Node runtime that

@@ -36,12 +36,11 @@ runs:
       run: |
         pnpm install
 
-    - uses: actions-rs/toolchain@v1
+    # NOTE: actions-rs/toolchain is archived and declares a Node runtime that
+    # GitHub runners no longer support.
+    - uses: dtolnay/rust-toolchain@1.95.0
       with:
-        profile: minimal
-        toolchain: 1.95.0
         components: rustfmt, clippy
-        default: true
 
     - name: Install fake sendmail
       shell: bash

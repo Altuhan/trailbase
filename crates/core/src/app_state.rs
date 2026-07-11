@@ -154,6 +154,7 @@ impl AppState {
       args.logs_conn.clone(),
       args.session_conn.clone(),
       object_store.clone(),
+      args.backup_service.clone(),
     );
 
     let shared_kv_store = crate::wasm::KvStore::new();
@@ -197,7 +198,8 @@ impl AppState {
         jobs: config.derive_unchecked(move |c| {
           debug!("(re-)building jobs from config");
 
-          let (data_dir, conn_mgr, logs_conn, session_conn, object_store) = &jobs_input;
+          let (data_dir, conn_mgr, logs_conn, session_conn, object_store, backup_service) =
+            &jobs_input;
 
           return Arc::new(
             build_job_registry_from_config(
@@ -207,6 +209,7 @@ impl AppState {
               logs_conn,
               session_conn,
               object_store.clone(),
+              backup_service.clone(),
             )
             .unwrap_or_else(|err| {
               error!("Failed to build JobRegistry for cron jobs: {err}");

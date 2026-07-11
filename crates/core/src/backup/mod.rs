@@ -10,18 +10,14 @@
 //!
 //! Working backlog: BACKUP_PLAN.md (iterations 1-9).
 
-// The service consuming these lands in follow-up iterations (BACKUP_PLAN.md
-// items 3-5); this allow goes away with it.
-#![allow(dead_code)]
-
 mod manifest;
 mod service;
 mod snapshot;
 
 pub(crate) use manifest::{Manifest, ManifestEntry};
-pub(crate) use service::BackupService;
 #[cfg(test)]
 pub(crate) use service::RetryPolicy;
+pub(crate) use service::{BackupError, BackupService};
 pub(crate) use snapshot::{SnapshotError, snapshot_db_file};
 
 use std::path::PathBuf;

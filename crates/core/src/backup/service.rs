@@ -302,6 +302,138 @@ pub(crate) fn latest_object_path(name: &str) -> ObjPath {
   return ObjPath::from(format!("{LATEST_PREFIX}/{name}.db"));
 }
 
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct NightlySummary {
+  pub scanned: usize,
+  pub uploaded: usize,
+  pub still_dirty: usize,
+  pub epochs_copied: usize,
+  pub epochs_pruned: usize,
+}
+
+impl std::fmt::Display for NightlySummary {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    return write!(
+      f,
+      "scanned={} uploaded={} still-dirty={} epochs-copied={} epochs-pruned={}",
+      self.scanned, self.uploaded, self.still_dirty, self.epochs_copied, self.epochs_pruned
+    );
+  }
+}
+
+impl BackupService {
+  /// The nightly sweep: enqueues every database file for upload (the
+  /// pipeline skips clean ones), waits for the queue to drain, then
+  /// maintains the dated `epochs/` copies — server-side copies of
+  /// `latest/` for every database uploaded within the last day — and
+  /// prunes epochs older than the retention window.
+  pub(crate) async fn run_nightly(&self) -> Result<NightlySummary, BackupError> {
+    use futures_util::StreamExt;
+    use object_store::ObjectStoreExt;
+
+    let inner = &self.inner;
+    let sweep_start_ms = now_ms();
+
+    let names = list_database_names(&inner.data_path, inner.config.include_main)?;
+    let mut summary = NightlySummary {
+      scanned: names.len(),
+      ..Default::default()
+    };
+
+    for name in &names {
+      self.enqueue(name);
+    }
+    self.drain().await;
+
+    // Bookkeeping and the epoch-copy candidates (uploaded within a day —
+    // this sweep or earlier eviction syncs).
+    const DAY_MS: i64 = 24 * 3600 * 1000;
+    let mut epoch_candidates = Vec::new();
+    {
+      let manifest = inner.manifest.lock();
+      for name in &names {
+        let entry = manifest.entries.get(name);
+        if let Some(entry) = entry {
+          if entry.last_backup_start_ms >= sweep_start_ms {
+            summary.uploaded += 1;
+          }
+          if entry.last_backup_start_ms >= sweep_start_ms - DAY_MS {
+            epoch_candidates.push(name.clone());
+          }
+        }
+        if is_dirty(&inner.data_path.join(format!("{name}.db")), entry) {
+          summary.still_dirty += 1;
+        }
+      }
+    }
+
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    for name in epoch_candidates {
+      let from = latest_object_path(&name);
+      let to = ObjPath::from(format!("{EPOCHS_PREFIX}/{today}/{name}.db"));
+      match inner.store.copy(&from, &to).await {
+        Ok(()) => summary.epochs_copied += 1,
+        Err(err) => warn!("Failed to copy {from} to {to}: {err}"),
+      }
+    }
+
+    // Retention: drop whole epochs/<date>/ prefixes past the window.
+    let cutoff = chrono::Utc::now().date_naive()
+      - chrono::Days::new(u64::from(inner.config.epoch_retain_days));
+    let listing = inner
+      .store
+      .list_with_delimiter(Some(&ObjPath::from(EPOCHS_PREFIX)))
+      .await?;
+    for prefix in listing.common_prefixes {
+      let Some(date_part) = prefix.as_ref().strip_prefix("epochs/") else {
+        continue;
+      };
+      let Ok(date) = date_part.parse::<chrono::NaiveDate>() else {
+        warn!("Skipping unrecognized epoch prefix: {prefix}");
+        continue;
+      };
+      if date >= cutoff {
+        continue;
+      }
+
+      let mut objects = inner.store.list(Some(&prefix));
+      while let Some(meta) = objects.next().await {
+        let location = meta?.location;
+        match inner.store.delete(&location).await {
+          Ok(()) => summary.epochs_pruned += 1,
+          Err(err) => warn!("Failed to prune old epoch object {location}: {err}"),
+        }
+      }
+    }
+
+    return Ok(summary);
+  }
+}
+
+/// Lists backup-eligible database names in `data_path`: regular `*.db`
+/// files minus the never-uploaded system databases (and `main` unless
+/// included).
+fn list_database_names(data_path: &Path, include_main: bool) -> std::io::Result<Vec<String>> {
+  let mut names = Vec::new();
+  for entry in std::fs::read_dir(data_path)? {
+    let entry = entry?;
+    let path = entry.path();
+    if !entry.file_type()?.is_file() || path.extension().and_then(|e| e.to_str()) != Some("db") {
+      continue;
+    }
+    let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
+      warn!("Skipping non-UTF-8 database file: {path:?}");
+      continue;
+    };
+    if EXCLUDED_DB_NAMES.contains(&name) || (name == "main" && !include_main) {
+      continue;
+    }
+    names.push(name.to_string());
+  }
+  names.sort();
+  return Ok(names);
+}
+
 pub(crate) fn now_ms() -> i64 {
   return SystemTime::now()
     .duration_since(UNIX_EPOCH)
@@ -628,6 +760,117 @@ mod tests {
 
     assert_eq!(0, flaky.put_attempts.load(Ordering::Relaxed));
     assert!(service.manifest_snapshot().entries.is_empty());
+  }
+
+  #[tokio::test]
+  async fn test_nightly_sweep_uploads_and_copies_epochs() {
+    let tmp = temp_dir::TempDir::new().expect("tmp");
+    let data_dir = DataDir(tmp.path().to_path_buf());
+    for (name, rows) in [("tenant_a", 20), ("tenant_b", 10), ("main", 5), ("logs", 5)] {
+      create_tenant_db(&data_dir.data_path(), name, rows);
+    }
+
+    let flaky = Arc::new(FlakyStore::new(0));
+    let store: Arc<dyn ObjectStore> = flaky.clone();
+    let service = BackupService::with_store(test_config(), store.clone(), &data_dir, zero_retry(1));
+
+    let summary = service.run_nightly().await.expect("sweep");
+    assert_eq!(3, summary.scanned, "logs is excluded from the sweep");
+    assert_eq!(3, summary.uploaded);
+    assert_eq!(0, summary.still_dirty);
+    assert_eq!(3, summary.epochs_copied);
+    assert_eq!(0, summary.epochs_pruned);
+
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let mut locations = list_locations(&store).await;
+    locations.sort();
+    assert_eq!(
+      vec![
+        format!("epochs/{today}/main.db"),
+        format!("epochs/{today}/tenant_a.db"),
+        format!("epochs/{today}/tenant_b.db"),
+        "latest/main.db".to_string(),
+        "latest/tenant_a.db".to_string(),
+        "latest/tenant_b.db".to_string(),
+      ],
+      locations
+    );
+
+    // A second sweep without writes uploads nothing and keeps the same
+    // set of objects (epoch copies overwrite today's entries).
+    let attempts_before = flaky.put_attempts.load(Ordering::Relaxed);
+    let summary = service.run_nightly().await.expect("sweep");
+    assert_eq!(0, summary.uploaded);
+    assert_eq!(3, summary.epochs_copied);
+    assert_eq!(attempts_before, flaky.put_attempts.load(Ordering::Relaxed));
+    assert_eq!(6, list_locations(&store).await.len());
+  }
+
+  #[tokio::test]
+  async fn test_nightly_sweep_prunes_expired_epochs() {
+    let tmp = temp_dir::TempDir::new().expect("tmp");
+    let data_dir = DataDir(tmp.path().to_path_buf());
+    create_tenant_db(&data_dir.data_path(), "tenant_a", 5);
+
+    let store: Arc<dyn ObjectStore> = Arc::new(object_store::memory::InMemory::new());
+    for path in ["epochs/2020-01-01/ghost.db", "epochs/2020-01-01/other.db"] {
+      store
+        .put(
+          &ObjPath::from(path),
+          object_store::PutPayload::from_static(b"old"),
+        )
+        .await
+        .expect("seed");
+    }
+
+    let service = BackupService::with_store(test_config(), store.clone(), &data_dir, zero_retry(1));
+    let summary = service.run_nightly().await.expect("sweep");
+
+    assert_eq!(2, summary.epochs_pruned);
+    let locations = list_locations(&store).await;
+    assert!(
+      locations.iter().all(|l| !l.starts_with("epochs/2020")),
+      "expired epochs must be gone: {locations:?}"
+    );
+  }
+
+  #[test]
+  fn test_list_database_names() {
+    let tmp = temp_dir::TempDir::new().expect("tmp");
+    let dir = tmp.path();
+    for file in [
+      "tenant_a.db",
+      "tenant_b.db",
+      "main.db",
+      "logs.db",
+      "session.db",
+      "queue.db",
+      "notes.txt",
+      "tenant_c.db-wal",
+    ] {
+      std::fs::write(dir.join(file), b"x").expect("write");
+    }
+    std::fs::create_dir(dir.join("sub.db")).expect("mkdir");
+
+    assert_eq!(
+      vec!["main".to_string(), "tenant_a".into(), "tenant_b".into()],
+      list_database_names(dir, true).expect("names")
+    );
+    assert_eq!(
+      vec!["tenant_a".to_string(), "tenant_b".into()],
+      list_database_names(dir, false).expect("names")
+    );
+  }
+
+  async fn list_locations(store: &Arc<dyn ObjectStore>) -> Vec<String> {
+    use futures_util::StreamExt;
+
+    let mut locations = vec![];
+    let mut stream = store.list(None);
+    while let Some(meta) = stream.next().await {
+      locations.push(meta.expect("meta").location.to_string());
+    }
+    return locations;
   }
 
   #[test]

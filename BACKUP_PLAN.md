@@ -50,7 +50,7 @@ branch. Both built with `cargo build --bin trail --no-default-features`
 - [x] 4. Eviction hook: `quick_cache` lifecycle (fallback: drop-guard in
       `ConnectionEntry`) → non-blocking enqueue; cache capacity from
       options + `TB_CONN_CACHE_CAPACITY`; eviction test with capacity 2.
-- [ ] 5. Nightly job "R2 Backup": custom (non-proto) job registration,
+- [x] 5. Nightly job "R2 Backup": custom (non-proto) job registration,
       `data/*.db` scan, enqueue dirty, drain, server-side copy `latest/` →
       `epochs/<YYYY-MM-DD>/`, retention cleanup, summary log; InMemory
       tests.

@@ -16,6 +16,7 @@ use trailbase_schema::{QualifiedName, QualifiedNameEscaped};
 use trailbase_sqlite::{Connection, named_params, params};
 
 use crate::DataDir;
+use crate::backup::BackupService;
 use crate::config::proto::{Config, SystemJob, SystemJobId};
 use crate::connection::{BuildOptions, ConnectionManager};
 use crate::constants::{
@@ -492,6 +493,7 @@ pub fn build_job_registry_from_config(
   logs_conn: &Connection,
   session_conn: &Connection,
   object_store: Arc<dyn ObjectStore>,
+  backup: Option<BackupService>,
 ) -> Result<JobRegistry, CallbackError> {
   let job_ids = [
     SystemJobId::Backup,
@@ -545,6 +547,32 @@ pub fn build_job_registry_from_config(
         error!("Invalid time spec for '{name}': {err}");
       }
     };
+  }
+
+  // The remote-backup sweep is a custom (non-proto) job: only registered
+  // when backups are configured, scheduled via the backup config itself.
+  if let Some(backup) = backup {
+    let schedule_str = backup.config().schedule.clone();
+    match Schedule::from_str(&schedule_str) {
+      Ok(schedule) => {
+        let callback = build_callback(move || {
+          let backup = backup.clone();
+          return async move {
+            let summary = backup.run_nightly().await?;
+            info!("Remote backup sweep done: {summary}");
+            Ok::<(), crate::backup::BackupError>(())
+          };
+        });
+
+        match jobs.new_job(None, "Remote Backup", schedule, callback) {
+          Some(job) => job.start(),
+          None => error!("Duplicate job definition for 'Remote Backup'"),
+        }
+      }
+      Err(err) => {
+        error!("Invalid backup schedule '{schedule_str}': {err}");
+      }
+    }
   }
 
   return Ok(jobs);

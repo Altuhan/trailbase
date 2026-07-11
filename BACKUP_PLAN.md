@@ -34,7 +34,7 @@ branch. Both built with `cargo build --bin trail --no-default-features`
 - [x] 0. A/B contour: `tools/ab-contour.mjs`, build binary A from the
       `main`-equivalent tree, run the contour → commit report A
       (`tools/ab-reports/A-main.json`) and the Baseline section below.
-- [ ] 1. `crates/core/src/backup/` scaffold: env-based config
+- [x] 1. `crates/core/src/backup/` scaffold: env-based config
       (S3/R2 + `TB_BACKUP_FS_DIR` + schedule/concurrency/retention),
       JSON manifest with atomic writes + unit tests; module wired into
       `lib.rs`.

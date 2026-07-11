@@ -128,6 +128,39 @@ and admin-read tools work over HTTP but the snapshot sandbox does not; take a
 snapshot out of band (the admin `Backup` job writes `backups/backup.db`) and
 point a local `TRAILBASE_DATA_DIR` at it.
 
+## Deployment (self-contained artifact)
+
+For hosts without pnpm or a repo checkout, package the server into a tarball
+that only needs Node 22+:
+
+```bash
+examples/mcp-server/scripts/package.sh
+# -> examples/mcp-server/out/trailbase-mcp-<version>.tar.gz
+```
+
+On the target host:
+
+```bash
+tar -xzf trailbase-mcp-<version>.tar.gz
+node trailbase-mcp/index.js   # point .mcp.json's args at this path
+```
+
+Alternatively build a container image (from the repository root):
+
+```bash
+docker build -f examples/mcp-server/Dockerfile -t trailbase-mcp .
+claude mcp add trailbase -- docker run -i --rm \
+  -e TRAILBASE_URL=https://your-instance.example \
+  -e TRAILBASE_MODE=prod-safe \
+  -e TRAILBASE_USER=claude-agent@example.com \
+  -e TRAILBASE_PASSWORD=... \
+  trailbase-mcp
+```
+
+`-i` is required — MCP speaks over stdin/stdout. For sandbox mode inside a
+container, mount the depot and a `trail` binary and set
+`TRAILBASE_DATA_DIR`/`TRAIL_BIN` accordingly.
+
 ## Development
 
 ```bash

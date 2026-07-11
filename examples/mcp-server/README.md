@@ -188,6 +188,24 @@ claude mcp add trailbase -- docker run -i --rm \
 container, mount the depot and a `trail` binary and set
 `TRAILBASE_DATA_DIR`/`TRAIL_BIN` accordingly.
 
+### Single executable (no Node on the host)
+
+With [Bun](https://bun.sh) installed on the build machine, compile the server
+into one self-contained file (~95 MB — it embeds the Bun runtime):
+
+```bash
+examples/mcp-server/scripts/build-binary.sh
+# -> examples/mcp-server/out/trailbase-mcp-<version>-<platform>
+# cross-compile, e.g.: TARGET=bun-linux-arm64 examples/mcp-server/scripts/build-binary.sh
+```
+
+Copy that file to the host and point `.mcp.json`'s `command` at it — no Node,
+npm or extraction step. Binaries are per-platform; build for the target
+(`bun-linux-x64`, `bun-linux-arm64`, `bun-darwin-*`). Same environment
+variables as always; sandbox mode still needs a `trail` binary on the host.
+The build script smoke-tests host builds with a real MCP handshake
+(`scripts/smoke-binary.mjs`).
+
 ## Development
 
 ```bash

@@ -353,8 +353,20 @@ async function main() {
         headers: adminHeaders,
       });
       const body = await response.json();
+      // Entries are `(Table, String)` tuples serialized as two-element
+      // arrays; the table's `name` is a qualified-name object.
       const names = Array.isArray(body?.tables)
-        ? body.tables.map((t) => t?.name?.name ?? t?.name).sort()
+        ? body.tables
+            .map((entry) => {
+              const table = Array.isArray(entry) ? entry[0] : entry;
+              const name = table?.name;
+              if (typeof name === "string") return name;
+              if (name && typeof name === "object") {
+                return `${name.database_schema ?? "main"}.${name.name}`;
+              }
+              return stable(table);
+            })
+            .sort()
         : body;
       step("admin-tables", response.status, names);
     }

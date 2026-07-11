@@ -31,7 +31,7 @@ branch. Both built with `cargo build --bin trail --no-default-features`
 
 ## Backlog
 
-- [ ] 0. A/B contour: `tools/ab-contour.mjs`, build binary A from the
+- [x] 0. A/B contour: `tools/ab-contour.mjs`, build binary A from the
       `main`-equivalent tree, run the contour → commit report A
       (`tools/ab-reports/A-main.json`) and the Baseline section below.
 - [ ] 1. `crates/core/src/backup/` scaffold: env-based config
@@ -68,4 +68,21 @@ branch. Both built with `cargo build --bin trail --no-default-features`
 
 ## Baseline (report A)
 
-_Recorded by iteration 0._
+Recorded 2026-07-11 on the session container. Binary A (sha256
+`c37600992ace…f997c3`, kept as a scratch artifact and reproducible):
+`main` (02f4dc8) + iteration-0 build glue only — no backup code; debug
+profile, rust 1.95.0, `cargo build --bin trail --no-default-features`,
+real UI assets. Report: `tools/ab-reports/A-main.json`.
+
+- Golden: 14 steps, expected statuses only (200s + intentional 401),
+  deterministic row data (100 inserts → aggregate 100/4950 → after
+  mutations 90/4374), 7 tables listed.
+- healthcheck p50/p95/p99: 726/989/2535 us (mean 787).
+- admin_query (point SELECT) p50/p95/p99: 15013/19141/20551 us.
+- Throughput: 5273 rps (8 workers, 3 s, healthcheck).
+- RSS idle/after-load: 92356/96628 kB; FDs 39/54.
+
+Comparison protocol: the committed report is A's recorded snapshot. At
+iteration 8 A and B are re-run back-to-back on the same machine (paired
+fresh runs) and compared with `--compare` to keep environment drift out
+of the verdict.

@@ -84,10 +84,54 @@ pub(crate) struct BackupConfig {
 }
 
 impl BackupConfig {
-  /// Reads the configuration from process environment variables. Returns
-  /// `None` when no store is configured, i.e. backups are disabled.
-  pub(crate) fn from_env() -> Result<Option<BackupConfig>, BackupConfigError> {
-    return Self::from_lookup(&|name| std::env::var(name).ok());
+  /// Resolves the effective configuration: `TB_BACKUP_*` environment
+  /// variables take precedence, then the `server.backups` section of the
+  /// (vault-hydrated) proto config. Returns `None` when no store is
+  /// configured, i.e. backups are disabled.
+  pub(crate) fn resolve(
+    proto: Option<&crate::config::proto::BackupsConfig>,
+  ) -> Result<Option<BackupConfig>, BackupConfigError> {
+    let config = Self::from_lookup(&|name| {
+      if let Ok(value) = std::env::var(name) {
+        if !value.is_empty() {
+          return Some(value);
+        }
+      }
+      let proto = proto?;
+      return match name {
+        ENV_S3_ENDPOINT => proto.s3_endpoint.clone(),
+        ENV_S3_BUCKET => proto.s3_bucket_name.clone(),
+        ENV_S3_REGION => proto.s3_region.clone(),
+        ENV_S3_ACCESS_KEY_ID => proto.s3_access_key_id.clone(),
+        ENV_S3_SECRET_ACCESS_KEY => proto.s3_secret_access_key.clone(),
+        ENV_SCHEDULE => proto.schedule.clone(),
+        ENV_CONCURRENCY => proto.concurrency.map(|v| v.to_string()),
+        ENV_EPOCH_RETAIN_DAYS => proto.epoch_retain_days.map(|v| v.to_string()),
+        ENV_INCLUDE_MAIN => proto.include_main.map(|v| v.to_string()),
+        _ => None,
+      };
+    })?;
+
+    // A leftover redaction placeholder means the vault entry is missing —
+    // uploading with a literal "<REDACTED>" secret would fail confusingly
+    // at runtime instead.
+    if let Some(BackupConfig {
+      store: BackupStoreConfig::S3 {
+        secret_access_key: Some(ref secret),
+        ..
+      },
+      ..
+    }) = config
+    {
+      if secret == "<REDACTED>" {
+        return Err(BackupConfigError::Invalid(
+          ENV_S3_SECRET_ACCESS_KEY,
+          "unresolved secret placeholder; check the vault or set the env variable".to_string(),
+        ));
+      }
+    }
+
+    return Ok(config);
   }
 
   pub(crate) fn from_lookup(
@@ -198,12 +242,20 @@ impl BackupConfig {
   }
 }
 
-/// Builds the backup service from environment configuration; `None` when no
-/// store is configured. Called once during startup, within the runtime.
-pub(crate) fn init_from_env(
+/// Set-once handle wiring the backup service into the connection cache's
+/// eviction hook. The cache is built before the (vault-hydrated) config is
+/// available, so the service is injected right after config load; an empty
+/// slot means backups are disabled.
+pub(crate) type BackupSlot = Arc<std::sync::OnceLock<BackupService>>;
+
+/// Builds the backup service from env variables and the proto config;
+/// `None` when no store is configured. Called once during startup, within
+/// the runtime.
+pub(crate) fn init(
   data_dir: &crate::data_dir::DataDir,
+  proto: Option<&crate::config::proto::BackupsConfig>,
 ) -> Result<Option<BackupService>, BackupConfigError> {
-  let Some(config) = BackupConfig::from_env()? else {
+  let Some(config) = BackupConfig::resolve(proto)? else {
     return Ok(None);
   };
 
@@ -321,6 +373,42 @@ mod tests {
         "expected error for {key}={value}"
       );
     }
+  }
+
+  #[test]
+  fn test_resolve_from_proto_with_placeholder_guard() {
+    use crate::config::proto::BackupsConfig;
+
+    let proto = BackupsConfig {
+      s3_endpoint: Some("https://acc.r2.cloudflarestorage.com".to_string()),
+      s3_bucket_name: Some("tb-backups".to_string()),
+      s3_region: None,
+      s3_access_key_id: Some("key".to_string()),
+      s3_secret_access_key: Some("s3cr3t".to_string()),
+      schedule: None,
+      concurrency: Some(4),
+      epoch_retain_days: None,
+      include_main: Some(false),
+    };
+
+    let config = BackupConfig::resolve(Some(&proto))
+      .expect("ok")
+      .expect("some");
+    assert!(matches!(config.store, BackupStoreConfig::S3 { .. }));
+    assert_eq!(DEFAULT_SCHEDULE, config.schedule);
+    assert_eq!(4, config.concurrency);
+    assert_eq!(DEFAULT_EPOCH_RETAIN_DAYS, config.epoch_retain_days);
+    assert!(!config.include_main);
+
+    // An unresolved vault placeholder must not silently become the secret.
+    let redacted = BackupsConfig {
+      s3_secret_access_key: Some("<REDACTED>".to_string()),
+      ..proto
+    };
+    assert!(BackupConfig::resolve(Some(&redacted)).is_err());
+
+    // No proto section and no env: disabled.
+    assert_eq!(None, BackupConfig::resolve(None).expect("ok"));
   }
 
   #[test]

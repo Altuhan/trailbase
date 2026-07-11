@@ -524,6 +524,52 @@ export interface S3StorageConfig {
   secretAccessKey?: string | undefined;
 }
 
+/**
+ * / Continuous backup of the depot's SQLite databases to an S3-compatible
+ * / object store, e.g. Cloudflare R2.
+ * /
+ * / Dirty databases are uploaded to `latest/<name>.db` when their connection
+ * / is evicted from the connection cache and by a nightly sweep job, which
+ * / additionally maintains dated `epochs/<date>/` copies. Changes apply on
+ * / server restart. `TB_BACKUP_*` environment variables take precedence.
+ */
+export interface BackupsConfig {
+  /** / S3-compatible endpoint, e.g. "https://<account-id>.r2.cloudflarestorage.com". */
+  s3Endpoint?:
+    | string
+    | undefined;
+  /** / Bucket receiving the `latest/` and `epochs/` objects. */
+  s3BucketName?:
+    | string
+    | undefined;
+  /** / Default: "auto", which fits Cloudflare R2. */
+  s3Region?: string | undefined;
+  s3AccessKeyId?: string | undefined;
+  s3SecretAccessKey?:
+    | string
+    | undefined;
+  /**
+   * / 7-field cron spec (with seconds), interpreted in UTC.
+   * / Default: "0 0 22 * * * *", i.e. 22:00 UTC daily.
+   */
+  schedule?:
+    | string
+    | undefined;
+  /** / Maximum concurrent snapshot+upload pipelines. Default: 2. */
+  concurrency?:
+    | number
+    | undefined;
+  /** / Days to keep the nightly `epochs/<date>/` copies. Default: 14. */
+  epochRetainDays?:
+    | number
+    | undefined;
+  /**
+   * / Whether `main.db` is included in backups (logs/sessions never are).
+   * / Default: true.
+   */
+  includeMain?: boolean | undefined;
+}
+
 export interface ServerConfig {
   /**
    * / Application name presented to users, e.g. when sending emails. Default:
@@ -567,7 +613,14 @@ export interface ServerConfig {
    * / Note that login endpoints have additional fixed rate limits
    * / on a per credentials level.
    */
-  authIpRateLimit?: number | undefined;
+  authIpRateLimit?:
+    | number
+    | undefined;
+  /**
+   * / If present, continuously backs up databases to an S3-compatible
+   * / object store (e.g. Cloudflare R2). Applied on server restart.
+   */
+  backups?: BackupsConfig | undefined;
 }
 
 export interface SystemJob {
@@ -1809,6 +1862,222 @@ export const S3StorageConfig: MessageFns<S3StorageConfig> = {
   },
 };
 
+function createBaseBackupsConfig(): BackupsConfig {
+  return {};
+}
+
+export const BackupsConfig: MessageFns<BackupsConfig> = {
+  encode(message: BackupsConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.s3Endpoint !== undefined && message.s3Endpoint !== "") {
+      writer.uint32(10).string(message.s3Endpoint);
+    }
+    if (message.s3BucketName !== undefined && message.s3BucketName !== "") {
+      writer.uint32(18).string(message.s3BucketName);
+    }
+    if (message.s3Region !== undefined && message.s3Region !== "") {
+      writer.uint32(26).string(message.s3Region);
+    }
+    if (message.s3AccessKeyId !== undefined && message.s3AccessKeyId !== "") {
+      writer.uint32(34).string(message.s3AccessKeyId);
+    }
+    if (message.s3SecretAccessKey !== undefined && message.s3SecretAccessKey !== "") {
+      writer.uint32(42).string(message.s3SecretAccessKey);
+    }
+    if (message.schedule !== undefined && message.schedule !== "") {
+      writer.uint32(50).string(message.schedule);
+    }
+    if (message.concurrency !== undefined && message.concurrency !== 0) {
+      writer.uint32(56).uint32(message.concurrency);
+    }
+    if (message.epochRetainDays !== undefined && message.epochRetainDays !== 0) {
+      writer.uint32(64).uint32(message.epochRetainDays);
+    }
+    if (message.includeMain !== undefined && message.includeMain !== false) {
+      writer.uint32(72).bool(message.includeMain);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): BackupsConfig {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseBackupsConfig();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.s3Endpoint = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.s3BucketName = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.s3Region = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.s3AccessKeyId = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.s3SecretAccessKey = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.schedule = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.concurrency = reader.uint32();
+          continue;
+        }
+        case 8: {
+          if (tag !== 64) {
+            break;
+          }
+
+          message.epochRetainDays = reader.uint32();
+          continue;
+        }
+        case 9: {
+          if (tag !== 72) {
+            break;
+          }
+
+          message.includeMain = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): BackupsConfig {
+    return {
+      s3Endpoint: isSet(object.s3Endpoint)
+        ? globalThis.String(object.s3Endpoint)
+        : isSet(object.s3_endpoint)
+        ? globalThis.String(object.s3_endpoint)
+        : undefined,
+      s3BucketName: isSet(object.s3BucketName)
+        ? globalThis.String(object.s3BucketName)
+        : isSet(object.s3_bucket_name)
+        ? globalThis.String(object.s3_bucket_name)
+        : undefined,
+      s3Region: isSet(object.s3Region)
+        ? globalThis.String(object.s3Region)
+        : isSet(object.s3_region)
+        ? globalThis.String(object.s3_region)
+        : undefined,
+      s3AccessKeyId: isSet(object.s3AccessKeyId)
+        ? globalThis.String(object.s3AccessKeyId)
+        : isSet(object.s3_access_key_id)
+        ? globalThis.String(object.s3_access_key_id)
+        : undefined,
+      s3SecretAccessKey: isSet(object.s3SecretAccessKey)
+        ? globalThis.String(object.s3SecretAccessKey)
+        : isSet(object.s3_secret_access_key)
+        ? globalThis.String(object.s3_secret_access_key)
+        : undefined,
+      schedule: isSet(object.schedule) ? globalThis.String(object.schedule) : undefined,
+      concurrency: isSet(object.concurrency) ? globalThis.Number(object.concurrency) : undefined,
+      epochRetainDays: isSet(object.epochRetainDays)
+        ? globalThis.Number(object.epochRetainDays)
+        : isSet(object.epoch_retain_days)
+        ? globalThis.Number(object.epoch_retain_days)
+        : undefined,
+      includeMain: isSet(object.includeMain)
+        ? globalThis.Boolean(object.includeMain)
+        : isSet(object.include_main)
+        ? globalThis.Boolean(object.include_main)
+        : undefined,
+    };
+  },
+
+  toJSON(message: BackupsConfig): unknown {
+    const obj: any = {};
+    if (message.s3Endpoint !== undefined && message.s3Endpoint !== "") {
+      obj.s3Endpoint = message.s3Endpoint;
+    }
+    if (message.s3BucketName !== undefined && message.s3BucketName !== "") {
+      obj.s3BucketName = message.s3BucketName;
+    }
+    if (message.s3Region !== undefined && message.s3Region !== "") {
+      obj.s3Region = message.s3Region;
+    }
+    if (message.s3AccessKeyId !== undefined && message.s3AccessKeyId !== "") {
+      obj.s3AccessKeyId = message.s3AccessKeyId;
+    }
+    if (message.s3SecretAccessKey !== undefined && message.s3SecretAccessKey !== "") {
+      obj.s3SecretAccessKey = message.s3SecretAccessKey;
+    }
+    if (message.schedule !== undefined && message.schedule !== "") {
+      obj.schedule = message.schedule;
+    }
+    if (message.concurrency !== undefined && message.concurrency !== 0) {
+      obj.concurrency = Math.round(message.concurrency);
+    }
+    if (message.epochRetainDays !== undefined && message.epochRetainDays !== 0) {
+      obj.epochRetainDays = Math.round(message.epochRetainDays);
+    }
+    if (message.includeMain !== undefined && message.includeMain !== false) {
+      obj.includeMain = message.includeMain;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<BackupsConfig>, I>>(base?: I): BackupsConfig {
+    return BackupsConfig.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<BackupsConfig>, I>>(object: I): BackupsConfig {
+    const message = createBaseBackupsConfig();
+    message.s3Endpoint = object.s3Endpoint ?? "";
+    message.s3BucketName = object.s3BucketName ?? "";
+    message.s3Region = object.s3Region ?? "";
+    message.s3AccessKeyId = object.s3AccessKeyId ?? "";
+    message.s3SecretAccessKey = object.s3SecretAccessKey ?? "";
+    message.schedule = object.schedule ?? "";
+    message.concurrency = object.concurrency ?? 0;
+    message.epochRetainDays = object.epochRetainDays ?? 0;
+    message.includeMain = object.includeMain ?? false;
+    return message;
+  },
+};
+
 function createBaseServerConfig(): ServerConfig {
   return {};
 }
@@ -1841,6 +2110,9 @@ export const ServerConfig: MessageFns<ServerConfig> = {
     }
     if (message.authIpRateLimit !== undefined && message.authIpRateLimit !== 0) {
       writer.uint32(128).uint32(message.authIpRateLimit);
+    }
+    if (message.backups !== undefined) {
+      BackupsConfig.encode(message.backups, writer.uint32(138).fork()).join();
     }
     return writer;
   },
@@ -1908,6 +2180,14 @@ export const ServerConfig: MessageFns<ServerConfig> = {
           message.authIpRateLimit = reader.uint32();
           continue;
         }
+        case 17: {
+          if (tag !== 138) {
+            break;
+          }
+
+          message.backups = BackupsConfig.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1954,6 +2234,7 @@ export const ServerConfig: MessageFns<ServerConfig> = {
         : isSet(object.auth_ip_rate_limit)
         ? globalThis.Number(object.auth_ip_rate_limit)
         : undefined,
+      backups: isSet(object.backups) ? BackupsConfig.fromJSON(object.backups) : undefined,
     };
   },
 
@@ -1980,6 +2261,9 @@ export const ServerConfig: MessageFns<ServerConfig> = {
     if (message.authIpRateLimit !== undefined && message.authIpRateLimit !== 0) {
       obj.authIpRateLimit = Math.round(message.authIpRateLimit);
     }
+    if (message.backups !== undefined) {
+      obj.backups = BackupsConfig.toJSON(message.backups);
+    }
     return obj;
   },
 
@@ -2002,6 +2286,9 @@ export const ServerConfig: MessageFns<ServerConfig> = {
         ? BigInt(object.requestSizeLimitBytes)
         : 0n;
     message.authIpRateLimit = object.authIpRateLimit ?? 0;
+    message.backups = (object.backups !== undefined && object.backups !== null)
+      ? BackupsConfig.fromPartial(object.backups)
+      : undefined;
     return message;
   },
 };

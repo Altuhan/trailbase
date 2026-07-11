@@ -54,7 +54,7 @@ branch. Both built with `cargo build --bin trail --no-default-features`
       `data/*.db` scan, enqueue dirty, drain, server-side copy `latest/` →
       `epochs/<YYYY-MM-DD>/`, retention cleanup, summary log; InMemory
       tests.
-- [ ] 6. Admin-visible config (user request): `BackupConfig` section in
+- [x] 6. Admin-visible config (user request): `BackupConfig` section in
       `config.proto` (+ regenerated ts-proto bindings) with env vars as
       secret/ops overrides; settings card in the admin UI.
 - [ ] 7. Binary e2e on `TB_BACKUP_FS_DIR`: `trail` with tenant DBs and

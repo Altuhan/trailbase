@@ -149,6 +149,35 @@ message S3StorageConfig {
   optional string secret_access_key = 9 [ (secret) = true ];
 }
 
+/// Continuous backup of the depot's SQLite databases to an S3-compatible
+/// object store, e.g. Cloudflare R2.
+///
+/// Dirty databases are uploaded to `latest/<name>.db` when their connection
+/// is evicted from the connection cache and by a nightly sweep job, which
+/// additionally maintains dated `epochs/<date>/` copies. Changes apply on
+/// server restart. `TB_BACKUP_*` environment variables take precedence.
+message BackupsConfig {
+  /// S3-compatible endpoint, e.g. "https://<account-id>.r2.cloudflarestorage.com".
+  optional string s3_endpoint = 1;
+  /// Bucket receiving the `latest/` and `epochs/` objects.
+  optional string s3_bucket_name = 2;
+  /// Default: "auto", which fits Cloudflare R2.
+  optional string s3_region = 3;
+  optional string s3_access_key_id = 4;
+  optional string s3_secret_access_key = 5 [ (secret) = true ];
+
+  /// 7-field cron spec (with seconds), interpreted in UTC.
+  /// Default: "0 0 22 * * * *", i.e. 22:00 UTC daily.
+  optional string schedule = 6;
+  /// Maximum concurrent snapshot+upload pipelines. Default: 2.
+  optional uint32 concurrency = 7;
+  /// Days to keep the nightly `epochs/<date>/` copies. Default: 14.
+  optional uint32 epoch_retain_days = 8;
+  /// Whether `main.db` is included in backups (logs/sessions never are).
+  /// Default: true.
+  optional bool include_main = 9;
+}
+
 message ServerConfig {
   /// Application name presented to users, e.g. when sending emails. Default:
   /// "TrailBase".
@@ -179,6 +208,10 @@ message ServerConfig {
   /// Note that login endpoints have additional fixed rate limits
   /// on a per credentials level.
   optional uint32 auth_ip_rate_limit = 16;
+
+  /// If present, continuously backs up databases to an S3-compatible
+  /// object store (e.g. Cloudflare R2). Applied on server restart.
+  optional BackupsConfig backups = 17;
 }
 
 enum SystemJobId {

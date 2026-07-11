@@ -56,7 +56,9 @@ pub async fn init_app_state(args: InitArgs) -> Result<(bool, AppState), InitErro
   .await
   .map_err(|err| InitError::ScriptError(err.to_string()))?;
 
-  let backup_service = crate::backup::init_from_env(&args.data_dir)?;
+  // The backup service itself is built only after the (vault-hydrated)
+  // config is loaded below; the cache's eviction hook gets this slot.
+  let backup_slot: crate::backup::BackupSlot = Arc::new(std::sync::OnceLock::new());
 
   let (connection_manager, new_db) = ConnectionManager::new(crate::connection::Options {
     data_dir: args.data_dir.clone(),
@@ -67,13 +69,18 @@ pub async fn init_app_state(args: InitArgs) -> Result<(bool, AppState), InitErro
         feature = "pg" => args.pg_uri,
         _ => None,
     },
-    backup: backup_service.clone(),
+    backup: backup_slot.clone(),
     cache_capacity: crate::connection::connection_cache_capacity_from_env(),
   })
   .await?;
 
   // Read config or write default one. Ensures config is validated.
   let config = load_or_init_config_textproto(&args.data_dir, &connection_manager).await?;
+
+  let backup_service = crate::backup::init(&args.data_dir, config.server.backups.as_ref())?;
+  if let Some(ref service) = backup_service {
+    let _ = backup_slot.set(service.clone());
+  }
 
   // Load the `<depot>/metadata.textproto`.
   let _metadata = load_or_init_metadata_textproto(&args.data_dir).await?;

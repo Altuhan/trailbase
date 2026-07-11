@@ -10,7 +10,7 @@ use trailbase_schema::metadata::ConnectionMetadata;
 
 pub use trailbase_sqlite::{Connection, unpack_other_error};
 
-use crate::backup::BackupService;
+use crate::backup::BackupSlot;
 use crate::data_dir::DataDir;
 use crate::migrations::{
   apply_base_migrations, apply_logs_migrations, apply_main_migrations, apply_session_migrations,
@@ -100,17 +100,19 @@ pub(crate) fn connection_cache_capacity_from_env() -> usize {
 /// The hook runs under a cache shard lock: `enqueue` is wait-free, and the
 /// evicted entries are accumulated in the request state so their `Drop`
 /// (which may close a SQLite connection) happens only after the lock is
-/// released.
+/// released. The service arrives via a set-once slot because it is built
+/// from the config, which loads only after this cache exists; an empty
+/// slot means backups are disabled.
 #[derive(Clone)]
 struct EvictionLifecycle {
-  backup: Option<BackupService>,
+  backup: BackupSlot,
 }
 
 impl quick_cache::Lifecycle<ConnectionKey, ConnectionEntry> for EvictionLifecycle {
   type RequestState = Vec<ConnectionEntry>;
 
   fn on_evict(&self, state: &mut Self::RequestState, key: ConnectionKey, entry: ConnectionEntry) {
-    if let Some(ref backup) = self.backup {
+    if let Some(backup) = self.backup.get() {
       for name in &key.attached_databases {
         backup.enqueue(name);
       }
@@ -127,7 +129,7 @@ type ConnectionCache = quick_cache::sync::Cache<
   EvictionLifecycle,
 >;
 
-fn build_connection_cache(capacity: usize, backup: Option<BackupService>) -> ConnectionCache {
+fn build_connection_cache(capacity: usize, backup: BackupSlot) -> ConnectionCache {
   return quick_cache::sync::Cache::with_options(
     quick_cache::OptionsBuilder::new()
       .estimated_items_capacity(capacity)
@@ -168,7 +170,7 @@ pub struct Options {
   pub json_schema_registry: Arc<RwLock<trailbase_schema::registry::JsonSchemaRegistry>>,
   pub sqlite_function_runtimes: Vec<(SqliteStore, SqliteFunctions)>,
   pub pg_uri: Option<String>,
-  pub backup: Option<BackupService>,
+  pub backup: BackupSlot,
   pub cache_capacity: usize,
 }
 
@@ -245,7 +247,7 @@ impl ConnectionManager {
     json_schema_registry: Arc<RwLock<trailbase_schema::registry::JsonSchemaRegistry>>,
     sqlite_function_runtimes: Vec<(SqliteStore, SqliteFunctions)>,
     pg_uri: Option<String>,
-    backup: Option<BackupService>,
+    backup: BackupSlot,
     cache_capacity: usize,
   ) -> Self {
     let (main_conn, main_metadata, new_db) = cfg_select! {
@@ -713,6 +715,8 @@ mod tests {
       &data_dir,
       RetryPolicy { backoff: vec![] },
     );
+    let backup_slot: BackupSlot = Arc::new(std::sync::OnceLock::new());
+    let _ = backup_slot.set(service.clone());
 
     let registry = Arc::new(RwLock::new(
       trailbase_schema::registry::build_json_schema_registry(vec![]).expect("registry"),
@@ -722,7 +726,7 @@ mod tests {
       registry,
       vec![],
       None,
-      Some(service.clone()),
+      backup_slot,
       /* cache_capacity= */ 2,
     )
     .await;

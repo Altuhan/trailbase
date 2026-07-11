@@ -18,6 +18,7 @@ import {
   TbOutlineBriefcase,
   TbOutlineTable,
   TbOutlineDatabaseExport,
+  TbOutlineCloudUpload,
 } from "solid-icons/tb";
 import { IconProps } from "solid-icons";
 import { useQueryClient } from "@tanstack/solid-query";
@@ -55,6 +56,7 @@ import {
 import { Header } from "@/components/Header";
 import { ConfirmCloseDialog } from "@/components/SafeSheet";
 import { AuthSettings } from "@/components/settings/AuthSettings";
+import { BackupSettings } from "@/components/settings/BackupSettings";
 import { DatabaseSettings } from "@/components/settings/DatabaseSettings";
 import { SchemaSettings } from "@/components/settings/SchemaSettings";
 import { EmailSettings } from "@/components/settings/EmailSettings";
@@ -452,6 +454,12 @@ const sites = [
     label: "Databases",
     child: DatabaseSettings,
     icon: TbOutlineDatabaseExport,
+  },
+  {
+    route: "backups",
+    label: "Backups",
+    child: BackupSettings,
+    icon: TbOutlineCloudUpload,
   },
   {
     route: "schema",

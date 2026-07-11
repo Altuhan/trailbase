@@ -131,7 +131,12 @@ jobs:
       - name: "Build & Run Tests"
         env:
           RUST_BACKTRACE: 1
-        run: cargo test --features=geos,otel,pg-test
+        # Scope to the crates with pg code paths. The client integration test
+        # (which spawns its own `cargo run` server build) already runs in the
+        # `test` and `test-websocket` jobs and only bloats this one.
+        run: |
+          cargo test -p trailbase --features=geos,otel,pg-test
+          cargo test -p trailbase-sqlite --features=generic
 
       # Just to monitor the runner's disk consumption.
       - name: Monitor Disk Space (End)

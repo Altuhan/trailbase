@@ -16,6 +16,10 @@ packages:
   - 'examples/wasm-guest-js'
   - 'examples/wasm-guest-ts'
   - 'guests/typescript'
+# Fetch the git-hosted dependency via a plain `git clone` instead of a
+# codeload.github.com tarball; some restricted networks only allow github.com.
+overrides:
+  '@tiledb-inc/wkx': 'git+https://github.com/TileDB-Inc/wkx.git#a6b561327baf40282b523c49ca0b573e49665c5b'
 allowBuilds:
   esbuild: true
   protobufjs: true

@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@tiledb-inc/wkx': git+https://github.com/TileDB-Inc/wkx.git#a6b561327baf40282b523c49ca0b573e49665c5b
+
 importers:
 
   client/testfixture/guests/typescript:
@@ -97,8 +100,8 @@ importers:
         specifier: ^8.21.3
         version: 8.21.3
       '@tiledb-inc/wkx':
-        specifier: github:TileDB-Inc/wkx
-        version: https://codeload.github.com/TileDB-Inc/wkx/tar.gz/a6b561327baf40282b523c49ca0b573e49665c5b
+        specifier: git+https://github.com/TileDB-Inc/wkx.git#a6b561327baf40282b523c49ca0b573e49665c5b
+        version: git+https://git@github.com:TileDB-Inc/wkx.git#a6b561327baf40282b523c49ca0b573e49665c5b
       chart.js:
         specifier: ^4.5.1
         version: 4.5.1
@@ -3126,8 +3129,8 @@ packages:
     peerDependencies:
       '@testing-library/dom': '>=7.21.4'
 
-  '@tiledb-inc/wkx@https://codeload.github.com/TileDB-Inc/wkx/tar.gz/a6b561327baf40282b523c49ca0b573e49665c5b':
-    resolution: {gitHosted: true, tarball: https://codeload.github.com/TileDB-Inc/wkx/tar.gz/a6b561327baf40282b523c49ca0b573e49665c5b}
+  '@tiledb-inc/wkx@git+https://git@github.com:TileDB-Inc/wkx.git#a6b561327baf40282b523c49ca0b573e49665c5b':
+    resolution: {commit: a6b561327baf40282b523c49ca0b573e49665c5b, repo: git@github.com:TileDB-Inc/wkx.git, type: git}
     version: 0.6.0
 
   '@tsconfig/node10@1.0.12':
@@ -9280,7 +9283,7 @@ snapshots:
     dependencies:
       '@testing-library/dom': 10.4.1
 
-  '@tiledb-inc/wkx@https://codeload.github.com/TileDB-Inc/wkx/tar.gz/a6b561327baf40282b523c49ca0b573e49665c5b':
+  '@tiledb-inc/wkx@git+https://git@github.com:TileDB-Inc/wkx.git#a6b561327baf40282b523c49ca0b573e49665c5b':
     dependencies:
       '@types/geojson': 7946.0.16
       '@types/node': 15.14.9
@@ -9418,7 +9421,7 @@ snapshots:
 
   '@types/sax@1.2.7':
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 26.1.1
 
   '@types/send@1.2.1':
     dependencies:

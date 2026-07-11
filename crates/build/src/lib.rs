@@ -86,6 +86,18 @@ pub fn pnpm_run(args: &[&str]) -> Result<std::process::Output> {
 }
 
 pub fn build_js(path: impl AsRef<Path>) -> Result<()> {
+  // Escape hatch for restricted build environments (no JS toolchain or no
+  // network access to JS registries): skip bundling and embed a stub so the
+  // `rust_embed` folders exist. Server HTTP APIs are unaffected, only the
+  // bundled UIs are.
+  println!("cargo::rerun-if-env-changed=TB_SKIP_JS_BUILD");
+  if matches!(
+    std::env::var("TB_SKIP_JS_BUILD").as_deref(),
+    Ok("TRUE") | Ok("true") | Ok("1")
+  ) {
+    return write_js_stub(path.as_ref());
+  }
+
   let path = path.as_ref().to_string_lossy().to_string();
   let strict_offline: bool = matches!(
     std::env::var("PNPM_OFFLINE").as_deref(),
@@ -135,6 +147,22 @@ pub fn build_js(path: impl AsRef<Path>) -> Result<()> {
 
   let _ = build_output?;
 
+  return Ok(());
+}
+
+fn write_js_stub(path: &Path) -> Result<()> {
+  let dist = path.join("dist");
+  if dist.join("index.html").exists() {
+    warn!("TB_SKIP_JS_BUILD set: keeping pre-built {dist:?}.");
+    return Ok(());
+  }
+
+  fs::create_dir_all(&dist)?;
+  fs::write(
+    dist.join("index.html"),
+    "<!doctype html><title>UI disabled</title>UI assets were not bundled (TB_SKIP_JS_BUILD).",
+  )?;
+  warn!("TB_SKIP_JS_BUILD set: wrote stub {dist:?} instead of bundling JS.");
   return Ok(());
 }
 

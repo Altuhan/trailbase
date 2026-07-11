@@ -57,7 +57,7 @@ branch. Both built with `cargo build --bin trail --no-default-features`
 - [x] 6. Admin-visible config (user request): `BackupConfig` section in
       `config.proto` (+ regenerated ts-proto bindings) with env vars as
       secret/ops overrides; settings card in the admin UI.
-- [ ] 7. Binary e2e on `TB_BACKUP_FS_DIR`: `trail` with tenant DBs and
+- [x] 7. Binary e2e on `TB_BACKUP_FS_DIR`: `trail` with tenant DBs and
       `TB_CONN_CACHE_CAPACITY=2`, files appear in the directory "bucket";
       restore drill: copy `latest/<name>.db` into a fresh data dir.
 - [ ] 8. A/B comparison: build B, run contour B(off) and B(on),

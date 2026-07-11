@@ -38,7 +38,7 @@ branch. Both built with `cargo build --bin trail --no-default-features`
       (S3/R2 + `TB_BACKUP_FS_DIR` + schedule/concurrency/retention),
       JSON manifest with atomic writes + unit tests; module wired into
       `lib.rs`.
-- [ ] 2. Snapshot primitive: throwaway read-only rusqlite connection +
+- [x] 2. Snapshot primitive: throwaway read-only rusqlite connection +
       online-backup API (128-page steps) in `spawn_blocking` with a
       deadline; integrity tests (WAL writes → snapshot →
       `PRAGMA integrity_check` + row counts).

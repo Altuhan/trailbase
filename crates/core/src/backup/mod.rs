@@ -15,8 +15,10 @@
 #![allow(dead_code)]
 
 mod manifest;
+mod snapshot;
 
 pub(crate) use manifest::{Manifest, ManifestEntry};
+pub(crate) use snapshot::{SnapshotError, snapshot_db_file};
 
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -14,7 +14,10 @@ runs:
   steps:
     - name: Inspect Checkout
       shell: bash
-      run: git describe --tags
+      # --always: don't fail on tag-less checkouts (e.g. forks, which GitHub
+      # creates without copying tags); the binary's version stamping already
+      # falls back gracefully when no tag is reachable.
+      run: git describe --tags --always
 
     - name: Install Dependencies
       shell: bash

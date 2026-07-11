@@ -47,7 +47,7 @@ branch. Both built with `cargo build --bin trail --no-default-features`
       `latest/<name>.db`, retries 1s/5s/25s; tests against
       `object_store::memory::InMemory` (success / transient failure /
       permanent failure keeps the db dirty).
-- [ ] 4. Eviction hook: `quick_cache` lifecycle (fallback: drop-guard in
+- [x] 4. Eviction hook: `quick_cache` lifecycle (fallback: drop-guard in
       `ConnectionEntry`) → non-blocking enqueue; cache capacity from
       options + `TB_CONN_CACHE_CAPACITY`; eviction test with capacity 2.
 - [ ] 5. Nightly job "R2 Backup": custom (non-proto) job registration,

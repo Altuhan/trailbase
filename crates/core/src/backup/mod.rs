@@ -19,9 +19,9 @@ mod service;
 mod snapshot;
 
 pub(crate) use manifest::{Manifest, ManifestEntry};
-// Consumed by the eviction hook and the nightly job in follow-up iterations.
-#[allow(unused_imports)]
-pub(crate) use service::{BackupService, RetryPolicy};
+pub(crate) use service::BackupService;
+#[cfg(test)]
+pub(crate) use service::RetryPolicy;
 pub(crate) use snapshot::{SnapshotError, snapshot_db_file};
 
 use std::path::PathBuf;
@@ -200,6 +200,22 @@ impl BackupConfig {
       }
     };
   }
+}
+
+/// Builds the backup service from environment configuration; `None` when no
+/// store is configured. Called once during startup, within the runtime.
+pub(crate) fn init_from_env(
+  data_dir: &crate::data_dir::DataDir,
+) -> Result<Option<BackupService>, BackupConfigError> {
+  let Some(config) = BackupConfig::from_env()? else {
+    return Ok(None);
+  };
+
+  let service = BackupService::from_config(config, data_dir)?;
+  log::info!(
+    "Backups enabled: dirty databases upload on connection eviction and on the nightly schedule."
+  );
+  return Ok(Some(service));
 }
 
 #[cfg(test)]

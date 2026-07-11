@@ -28,4 +28,6 @@ pub enum InitError {
   ObjectStore(#[from] object_store::Error),
   #[error("Auth error: {0}")]
   Auth(#[from] crate::auth::AuthError),
+  #[error("Backup error: {0}")]
+  Backup(#[from] crate::backup::BackupConfigError),
 }

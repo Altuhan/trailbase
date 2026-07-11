@@ -1,3 +1,4 @@
+use log::warn;
 use parking_lot::RwLock;
 use quick_cache::sync::GuardResult;
 use std::collections::BTreeSet;
@@ -9,6 +10,7 @@ use trailbase_schema::metadata::ConnectionMetadata;
 
 pub use trailbase_sqlite::{Connection, unpack_other_error};
 
+use crate::backup::BackupService;
 use crate::data_dir::DataDir;
 use crate::migrations::{
   apply_base_migrations, apply_logs_migrations, apply_main_migrations, apply_session_migrations,
@@ -72,6 +74,72 @@ pub struct ConnectionEntry {
   pub metadata: Arc<ConnectionMetadata>,
 }
 
+pub(crate) const DEFAULT_CONNECTION_CACHE_CAPACITY: usize = 256;
+
+const ENV_CACHE_CAPACITY: &str = "TB_CONN_CACHE_CAPACITY";
+
+/// Maximum number of cached multi-DB connections, i.e. concurrently open
+/// tenant databases; overridable via `TB_CONN_CACHE_CAPACITY`.
+pub(crate) fn connection_cache_capacity_from_env() -> usize {
+  let Ok(value) = std::env::var(ENV_CACHE_CAPACITY) else {
+    return DEFAULT_CONNECTION_CACHE_CAPACITY;
+  };
+  return match value.parse::<usize>() {
+    Ok(n) if n >= 2 => n,
+    _ => {
+      warn!(
+        "Invalid {ENV_CACHE_CAPACITY}='{value}'; using default {DEFAULT_CONNECTION_CACHE_CAPACITY}"
+      );
+      DEFAULT_CONNECTION_CACHE_CAPACITY
+    }
+  };
+}
+
+/// Feeds the databases of evicted connections into the backup pipeline.
+///
+/// The hook runs under a cache shard lock: `enqueue` is wait-free, and the
+/// evicted entries are accumulated in the request state so their `Drop`
+/// (which may close a SQLite connection) happens only after the lock is
+/// released.
+#[derive(Clone)]
+struct EvictionLifecycle {
+  backup: Option<BackupService>,
+}
+
+impl quick_cache::Lifecycle<ConnectionKey, ConnectionEntry> for EvictionLifecycle {
+  type RequestState = Vec<ConnectionEntry>;
+
+  fn on_evict(&self, state: &mut Self::RequestState, key: ConnectionKey, entry: ConnectionEntry) {
+    if let Some(ref backup) = self.backup {
+      for name in &key.attached_databases {
+        backup.enqueue(name);
+      }
+    }
+    state.push(entry);
+  }
+}
+
+type ConnectionCache = quick_cache::sync::Cache<
+  ConnectionKey,
+  ConnectionEntry,
+  quick_cache::UnitWeighter,
+  quick_cache::DefaultHashBuilder,
+  EvictionLifecycle,
+>;
+
+fn build_connection_cache(capacity: usize, backup: Option<BackupService>) -> ConnectionCache {
+  return quick_cache::sync::Cache::with_options(
+    quick_cache::OptionsBuilder::new()
+      .estimated_items_capacity(capacity)
+      .weight_capacity(capacity as u64)
+      .build()
+      .expect("startup"),
+    quick_cache::UnitWeighter,
+    quick_cache::DefaultHashBuilder::default(),
+    EvictionLifecycle { backup },
+  );
+}
+
 struct ConnectionManagerState {
   // Properties retained for initializing new connections.
   data_dir: DataDir,
@@ -80,7 +148,7 @@ struct ConnectionManagerState {
 
   // Properties for caching connections:
   main: RwLock<ConnectionEntry>,
-  connections: quick_cache::sync::Cache<ConnectionKey, ConnectionEntry>,
+  connections: ConnectionCache,
 
   #[allow(unused)]
   pg_uri: Option<String>,
@@ -100,6 +168,8 @@ pub struct Options {
   pub json_schema_registry: Arc<RwLock<trailbase_schema::registry::JsonSchemaRegistry>>,
   pub sqlite_function_runtimes: Vec<(SqliteStore, SqliteFunctions)>,
   pub pg_uri: Option<String>,
+  pub backup: Option<BackupService>,
+  pub cache_capacity: usize,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -116,6 +186,8 @@ impl ConnectionManager {
       json_schema_registry,
       sqlite_function_runtimes,
       pg_uri,
+      backup,
+      cache_capacity,
     } = opts;
 
     let (main_conn, main_metadata, new_db) = if let Some(ref pg_uri) = pg_uri {
@@ -159,7 +231,7 @@ impl ConnectionManager {
             connection: Arc::new(main_conn),
             metadata: Arc::new(main_metadata),
           }),
-          connections: quick_cache::sync::Cache::new(256),
+          connections: build_connection_cache(cache_capacity, backup),
           pg_uri,
         }),
       },
@@ -173,6 +245,8 @@ impl ConnectionManager {
     json_schema_registry: Arc<RwLock<trailbase_schema::registry::JsonSchemaRegistry>>,
     sqlite_function_runtimes: Vec<(SqliteStore, SqliteFunctions)>,
     pg_uri: Option<String>,
+    backup: Option<BackupService>,
+    cache_capacity: usize,
   ) -> Self {
     let (main_conn, main_metadata, new_db) = cfg_select! {
     feature = "pg-test" =>
@@ -215,7 +289,7 @@ impl ConnectionManager {
           connection: Arc::new(main_conn),
           metadata: Arc::new(main_metadata),
         }),
-        connections: quick_cache::sync::Cache::new(256),
+        connections: build_connection_cache(cache_capacity, backup),
         pg_uri,
       }),
     };
@@ -610,3 +684,80 @@ pub(crate) fn connect_rusqlite_without_default_extensions_and_schemas(
 }
 
 const PREPARED_STATEMENT_CACHE_CAPACITY: usize = 256;
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::backup::{BackupConfig, BackupService, RetryPolicy};
+  use futures_util::StreamExt;
+  use object_store::ObjectStore;
+
+  #[tokio::test]
+  async fn test_eviction_enqueues_backups() {
+    let tmp = temp_dir::TempDir::new().expect("tmp");
+    let data_dir = DataDir(tmp.path().to_path_buf());
+    data_dir
+      .ensure_directory_structure()
+      .await
+      .expect("depot layout");
+
+    let store: Arc<dyn ObjectStore> = Arc::new(object_store::memory::InMemory::new());
+    let config = BackupConfig::from_lookup(&|name| {
+      return (name == crate::backup::ENV_FS_DIR).then(|| "/unused".to_string());
+    })
+    .expect("valid")
+    .expect("configured");
+    let service = BackupService::with_store(
+      config,
+      store.clone(),
+      &data_dir,
+      RetryPolicy { backoff: vec![] },
+    );
+
+    let registry = Arc::new(RwLock::new(
+      trailbase_schema::registry::build_json_schema_registry(vec![]).expect("registry"),
+    ));
+    let manager = ConnectionManager::new_for_test(
+      data_dir.clone(),
+      registry,
+      vec![],
+      None,
+      Some(service.clone()),
+      /* cache_capacity= */ 2,
+    )
+    .await;
+
+    // Three distinct tenant connections against a capacity-2 cache force at
+    // least one eviction (or admission rejection), which must enqueue the
+    // affected database for backup.
+    for name in ["tenant_x", "tenant_y", "tenant_z"] {
+      manager
+        .get_entry(BuildOptions {
+          is_main: false,
+          attached_databases: Some([name.to_string()].into()),
+          num_threads: Some(1),
+        })
+        .await
+        .expect("entry");
+    }
+
+    service.drain().await;
+
+    let mut uploaded = vec![];
+    let mut stream = store.list(None);
+    while let Some(meta) = stream.next().await {
+      uploaded.push(meta.expect("meta").location.to_string());
+    }
+
+    assert!(
+      !uploaded.is_empty(),
+      "expected at least one eviction-triggered upload"
+    );
+    for path in &uploaded {
+      assert!(
+        path.starts_with("latest/tenant_") && path.ends_with(".db"),
+        "unexpected object: {path}"
+      );
+    }
+  }
+}

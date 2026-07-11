@@ -67,6 +67,9 @@ struct InternalState {
   session_conn: trailbase_sqlite::Connection,
   logs_conn: trailbase_sqlite::Connection,
   connection_manager: ConnectionManager,
+  // Read by the nightly job registration (BACKUP_PLAN.md item 5).
+  #[allow(unused)]
+  backup_service: Option<crate::backup::BackupService>,
 
   jwt: JwtHelper,
 
@@ -100,6 +103,7 @@ pub(crate) struct AppStateArgs {
   pub session_conn: trailbase_sqlite::Connection,
   pub logs_conn: trailbase_sqlite::Connection,
   pub connection_manager: ConnectionManager,
+  pub backup_service: Option<crate::backup::BackupService>,
   pub jwt: JwtHelper,
   pub object_store: Box<dyn ObjectStore>,
   pub wasm_tokio_runtime: Option<tokio::runtime::Handle>,
@@ -217,6 +221,7 @@ impl AppState {
         session_conn: args.session_conn,
         logs_conn: args.logs_conn,
         connection_manager: args.connection_manager,
+        backup_service: args.backup_service,
         jwt: args.jwt,
         record_apis: record_apis.clone(),
         subscription_manager: SubscriptionManager::new(record_apis),
@@ -330,6 +335,12 @@ impl AppState {
 
   pub(crate) fn objectstore(&self) -> &Arc<dyn ObjectStore> {
     return &self.state.object_store;
+  }
+
+  // Used by the nightly job registration (BACKUP_PLAN.md item 5).
+  #[allow(unused)]
+  pub(crate) fn backup_service(&self) -> Option<&crate::backup::BackupService> {
+    return self.state.backup_service.as_ref();
   }
 
   pub(crate) fn jobs(&self) -> Arc<JobRegistry> {
@@ -838,6 +849,8 @@ mod test_utils {
       json_schema_registry.clone(),
       vec![],
       pg_uri.clone(),
+      None,
+      crate::connection::DEFAULT_CONNECTION_CACHE_CAPACITY,
     )
     .await;
 
@@ -889,6 +902,7 @@ mod test_utils {
         session_conn,
         logs_conn,
         connection_manager,
+        backup_service: None,
         jwt: crate::auth::jwt::test_jwt_helper(),
         record_apis: record_apis.clone(),
         subscription_manager: SubscriptionManager::new(record_apis),
@@ -932,6 +946,8 @@ async fn init_app_state(args: InitArgs) -> Result<(bool, AppState), InitError> {
   .await
   .map_err(|err| InitError::ScriptError(err.to_string()))?;
 
+  let backup_service = crate::backup::init_from_env(&args.data_dir)?;
+
   let (connection_manager, new_db) = ConnectionManager::new(crate::connection::Options {
     data_dir: args.data_dir.clone(),
     json_schema_registry: json_schema_registry.clone(),
@@ -941,6 +957,8 @@ async fn init_app_state(args: InitArgs) -> Result<(bool, AppState), InitError> {
         feature = "pg" => args.pg_uri,
         _ => None,
     },
+    backup: backup_service.clone(),
+    cache_capacity: crate::connection::connection_cache_capacity_from_env(),
   })
   .await?;
 
@@ -974,6 +992,7 @@ async fn init_app_state(args: InitArgs) -> Result<(bool, AppState), InitError> {
     session_conn,
     logs_conn,
     connection_manager,
+    backup_service,
     jwt,
     object_store,
     wasm_tokio_runtime: args.wasm_tokio_runtime,

@@ -56,6 +56,8 @@ pub async fn init_app_state(args: InitArgs) -> Result<(bool, AppState), InitErro
   .await
   .map_err(|err| InitError::ScriptError(err.to_string()))?;
 
+  let backup_service = crate::backup::init_from_env(&args.data_dir)?;
+
   let (connection_manager, new_db) = ConnectionManager::new(crate::connection::Options {
     data_dir: args.data_dir.clone(),
     json_schema_registry: json_schema_registry.clone(),
@@ -65,6 +67,8 @@ pub async fn init_app_state(args: InitArgs) -> Result<(bool, AppState), InitErro
         feature = "pg" => args.pg_uri,
         _ => None,
     },
+    backup: backup_service.clone(),
+    cache_capacity: crate::connection::connection_cache_capacity_from_env(),
   })
   .await?;
 
@@ -98,6 +102,7 @@ pub async fn init_app_state(args: InitArgs) -> Result<(bool, AppState), InitErro
     session_conn,
     logs_conn,
     connection_manager,
+    backup_service,
     jwt,
     object_store,
     wasm_tokio_runtime: args.wasm_tokio_runtime,

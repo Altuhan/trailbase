@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "trailbase": {
+      "command": "node",
+      "args": ["examples/mcp-server/dist/index.js"],
+      "env": {
+        "TRAILBASE_URL": "http://localhost:4000",
+        "TRAILBASE_MODE": "prod-safe",
+        "TRAILBASE_USER": "claude-agent@example.com",
+        "TRAILBASE_PASSWORD": "replace-me"
+      }
+    }
+  }
+}

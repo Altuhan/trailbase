@@ -115,6 +115,7 @@ jobs:
 
   test-pg:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
         with:
@@ -131,7 +132,14 @@ jobs:
       - name: "Build & Run Tests"
         env:
           RUST_BACKTRACE: 1
-        run: cargo test --features=geos,otel,pg-test
+        # Scope to the crates with pg code paths. The client integration test
+        # (which spawns its own `cargo run` server build) already runs in the
+        # `test` and `test-websocket` jobs and only bloats this one.
+        # Serial test threads: the embedded-PGlite tests hang under the
+        # default parallel execution but pass reliably single-threaded.
+        run: |
+          cargo test -p trailbase --features=geos,otel,pg-test -- --test-threads=1
+          cargo test -p trailbase-sqlite --features=generic -- --test-threads=1
 
       # Just to monitor the runner's disk consumption.
       - name: Monitor Disk Space (End)

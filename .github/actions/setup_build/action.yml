@@ -14,7 +14,10 @@ runs:
   steps:
     - name: Inspect Checkout
       shell: bash
-      run: git describe --tags
+      # --always: don't fail on tag-less checkouts (e.g. forks, which GitHub
+      # creates without copying tags); the binary's version stamping already
+      # falls back gracefully when no tag is reachable.
+      run: git describe --tags --always
 
     - name: Install Dependencies
       shell: bash
@@ -31,14 +34,17 @@ runs:
     - name: PNPM install dependencies
       shell: bash
       run: |
+        # pnpm >= 10.34 clones git-hosted dependencies (admin's
+        # @tiledb-inc/wkx) via SSH, which runners have no keys for.
+        git config --global url."https://github.com/".insteadOf "git@github.com:"
+        git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/"
         pnpm install
 
-    - uses: actions-rs/toolchain@v1
+    # NOTE: actions-rs/toolchain is archived and declares a Node runtime that
+    # GitHub runners no longer support.
+    - uses: dtolnay/rust-toolchain@1.95.0
       with:
-        profile: minimal
-        toolchain: 1.95.0
         components: rustfmt, clippy
-        default: true
 
     - name: Install fake sendmail
       shell: bash

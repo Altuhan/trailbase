@@ -78,3 +78,11 @@ IMDB data and query it. This code belongs to the
 #### [Custom Rust Binary](custom-binary/)
 
 A quick example showcasing how one can use TrailBase as a library.
+
+#### [MCP Server](mcp-server/)
+
+An [MCP](https://modelcontextprotocol.io) server giving AI agents (Claude Code,
+Claude Desktop, …) safe, mode-gated access to a TrailBase instance: Record API
+CRUD as a dedicated non-admin user for live data, plus an ephemeral "production
+sandbox" — a throwaway snapshot of the live depot where schema changes are made
+and handed back as reviewable migration files instead of touching production.

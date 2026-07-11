@@ -3,6 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import type { Config } from "../config";
 import { withAudit } from "../audit";
+import { Guards } from "../guards";
 import { SandboxManager } from "../sandbox";
 
 export interface ToolContext {
@@ -11,6 +12,8 @@ export interface ToolContext {
   client(): Promise<Client>;
   /// Lifecycle owner of the (at most one) ephemeral sandbox instance.
   readonly sandbox: SandboxManager;
+  /// Prod-mode write guards: mutation budget and confirmation queue.
+  readonly guards: Guards;
 }
 
 export function newToolContext(
@@ -28,6 +31,7 @@ export function newToolContext(
         ? Promise.resolve(sandbox.recordClient())
         : (client ??= connect(config)),
     sandbox,
+    guards: new Guards(config),
   };
 }
 

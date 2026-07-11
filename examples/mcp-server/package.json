@@ -1,7 +1,7 @@
 {
   "name": "trailbase-mcp",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server exposing safe, mode-gated access to a TrailBase instance for AI agents",
   "type": "module",
   "license": "OSL-3.0",

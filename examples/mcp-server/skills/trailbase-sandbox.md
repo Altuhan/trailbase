@@ -16,7 +16,12 @@ review and apply through the normal deploy — never mutate production directly.
 - Trying server-config changes.
 
 For plain data reads/writes against production, use the `records_*` tools
-directly instead — they are enforced by the server's ACLs.
+directly instead — they are enforced by the server's ACLs. In prod modes,
+mutations are two-phase by default: `records_create/update/delete` return a
+`pending_id` and write nothing until you call `write_confirm` with it
+(`write_cancel` discards). Re-check the returned action summary before
+confirming; unconfirmed writes expire on their own, and each session has a
+limited write budget (see `auth_status`).
 
 ## Loop
 

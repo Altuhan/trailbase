@@ -38,7 +38,9 @@ sandbox instance created with `sandbox_create`.
 ## Tools
 
 **Records** (all modes): `records_list`, `records_read`, `records_create`,
-`records_update`, `records_delete`, `records_schema`, `auth_status`.
+`records_update`, `records_delete`, `records_schema`, `auth_status`; in prod
+modes with confirmation enabled also `write_confirm` / `write_cancel` (see
+_Write guards_).
 
 **Admin read** (`prod-admin-readonly`, `sandbox`): `admin_tables`,
 `admin_config_get`, `admin_logs`, `admin_jobs`, `admin_info`.
@@ -54,15 +56,19 @@ file — the artifact you review.
 
 ## Configuration (environment)
 
-| Variable                                           | Purpose                                                              |
-| -------------------------------------------------- | -------------------------------------------------------------------- |
-| `TRAILBASE_URL`                                    | Instance base URL (default `http://localhost:4000`)                  |
-| `TRAILBASE_MODE`                                   | `prod-safe` \| `prod-admin-readonly` \| `sandbox`                    |
-| `TRAILBASE_USER` / `TRAILBASE_PASSWORD`            | Record-API login for the dedicated agent user                        |
-| `TRAILBASE_AUTH_TOKEN` / `TRAILBASE_REFRESH_TOKEN` | Pre-issued tokens (alternative to login)                             |
-| `TRAILBASE_ADMIN_TOKEN`                            | Admin token for admin-read tools in prod modes                       |
-| `TRAILBASE_DATA_DIR`                               | Path to the live depot (`traildepot`), required for `sandbox_create` |
-| `TRAIL_BIN`                                        | `trail` binary used to run sandbox instances (default `trail`)       |
+| Variable                                           | Purpose                                                                             |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `TRAILBASE_URL`                                    | Instance base URL (default `http://localhost:4000`)                                 |
+| `TRAILBASE_MODE`                                   | `prod-safe` \| `prod-admin-readonly` \| `sandbox`                                   |
+| `TRAILBASE_USER` / `TRAILBASE_PASSWORD`            | Record-API login for the dedicated agent user                                       |
+| `TRAILBASE_AUTH_TOKEN` / `TRAILBASE_REFRESH_TOKEN` | Pre-issued tokens (alternative to login)                                            |
+| `TRAILBASE_ADMIN_TOKEN`                            | Admin token for admin-read tools in prod modes                                      |
+| `TRAILBASE_DATA_DIR`                               | Path to the live depot (`traildepot`), required for `sandbox_create`                |
+| `TRAIL_BIN`                                        | `trail` binary used to run sandbox instances (default `trail`)                      |
+| `TRAILBASE_BUDGET_WRITES`                          | Record mutations allowed per session in prod modes (default `100`, `0` = unlimited) |
+| `TRAILBASE_REDACT_COLUMNS`                         | Comma-separated case-insensitive regexes; matching column names are masked in reads |
+| `TRAILBASE_CONFIRM_WRITES`                         | Two-phase writes (`true`/`false`; default on in prod modes, off in `sandbox`)       |
+| `TRAILBASE_CONFIRM_TIMEOUT_SECS`                   | Seconds until an unconfirmed write expires (default `120`)                          |
 
 Create the dedicated non-admin user once:
 
@@ -101,6 +107,27 @@ The sandbox workflow is documented as a skill in
 [`skills/trailbase-sandbox.md`](skills/trailbase-sandbox.md) — copy it into
 `.claude/skills/` to teach the agent the create → change → diff → review → destroy
 loop.
+
+## Write guards (prod modes)
+
+Mutations against a live instance get three extra layers, adapted from the
+guard design of [applix-fr/mcp-trailbase](https://github.com/applix-fr/mcp-trailbase):
+
+- **Two-phase confirmation** (default on in prod modes):
+  `records_create/update/delete` don't execute — they park the mutation and
+  return a `pending_id` plus a human-readable summary. Nothing is written
+  until `write_confirm`; `write_cancel` discards, and unconfirmed writes
+  expire after `TRAILBASE_CONFIRM_TIMEOUT_SECS`. This puts every mutation
+  intent on the record (transcript + audit log) before it happens.
+- **Write budget**: at most `TRAILBASE_BUDGET_WRITES` mutations per server
+  process; when exhausted, further writes fail with instructions to have a
+  human raise the limit. `auth_status` reports the remaining budget.
+- **Column redaction**: values of columns matching `TRAILBASE_REDACT_COLUMNS`
+  (e.g. `password,token,.*_secret`) come back as `"[REDACTED]"` from
+  `records_list`/`records_read`, including rows expanded through foreign keys.
+
+Sandbox instances are disposable snapshots, so none of this applies in
+`sandbox` mode.
 
 ## Security model
 

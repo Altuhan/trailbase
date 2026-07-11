@@ -13,6 +13,10 @@ function testConfig(mode: Mode): Config {
     url: "http://localhost:4000",
     mode,
     trailBin: "trail",
+    budgetWrites: 100,
+    redactColumns: [],
+    confirmWrites: mode !== "sandbox",
+    confirmTimeoutSecs: 120,
   };
 }
 
@@ -138,5 +142,16 @@ describe("policy matrix", () => {
     for (const tool of ADMIN_READ_TOOLS) {
       expect(names).toContain(tool);
     }
+  });
+
+  test("write confirmation tools follow the confirm-writes default", async () => {
+    for (const mode of ["prod-safe", "prod-admin-readonly"] as const) {
+      const names = await listToolNames(mode);
+      expect(names, `mode=${mode}`).toContain("write_confirm");
+      expect(names, `mode=${mode}`).toContain("write_cancel");
+    }
+    const sandboxNames = await listToolNames("sandbox");
+    expect(sandboxNames).not.toContain("write_confirm");
+    expect(sandboxNames).not.toContain("write_cancel");
   });
 });

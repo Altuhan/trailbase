@@ -21,6 +21,17 @@ const envSchema = z.object({
   TRAILBASE_ADMIN_TOKEN: z.string().optional(),
   TRAILBASE_DATA_DIR: z.string().optional(),
   TRAIL_BIN: z.string().default("trail"),
+  TRAILBASE_BUDGET_WRITES: z.coerce.number().int().nonnegative().default(100),
+  TRAILBASE_REDACT_COLUMNS: z.string().default(""),
+  TRAILBASE_CONFIRM_WRITES: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
+  TRAILBASE_CONFIRM_TIMEOUT_SECS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(120),
 });
 
 export interface Config {
@@ -41,6 +52,16 @@ export interface Config {
   dataDir?: string;
   /// The `trail` binary used to prepare and run sandbox instances.
   trailBin: string;
+  /// Number of record mutations (create/update/delete) allowed per server
+  /// process in prod modes; 0 means unlimited. Ignored in sandbox mode.
+  budgetWrites: number;
+  /// Case-insensitive patterns matched against column names; matching
+  /// columns are masked in records_list/records_read results.
+  redactColumns: readonly RegExp[];
+  /// Whether prod-mode record mutations require a write_confirm round-trip.
+  confirmWrites: boolean;
+  /// Seconds until a pending (unconfirmed) write expires.
+  confirmTimeoutSecs: number;
 }
 
 export class ConfigError extends Error {}
@@ -75,6 +96,19 @@ export function loadConfig(
     );
   }
 
+  const redactColumns = e.TRAILBASE_REDACT_COLUMNS.split(",")
+    .map((p) => p.trim())
+    .filter((p) => p !== "")
+    .map((p) => {
+      try {
+        return new RegExp(p, "i");
+      } catch {
+        throw new ConfigError(
+          `TRAILBASE_REDACT_COLUMNS contains an invalid pattern: '${p}'`,
+        );
+      }
+    });
+
   return {
     url: url.toString().replace(/\/$/, ""),
     mode: e.TRAILBASE_MODE,
@@ -85,5 +119,11 @@ export function loadConfig(
     adminToken: e.TRAILBASE_ADMIN_TOKEN,
     dataDir: e.TRAILBASE_DATA_DIR,
     trailBin: e.TRAIL_BIN,
+    budgetWrites: e.TRAILBASE_BUDGET_WRITES,
+    redactColumns,
+    // Confirmation defaults on for modes that can reach production data and
+    // off for disposable sandboxes; the env var overrides either way.
+    confirmWrites: e.TRAILBASE_CONFIRM_WRITES ?? e.TRAILBASE_MODE !== "sandbox",
+    confirmTimeoutSecs: e.TRAILBASE_CONFIRM_TIMEOUT_SECS,
   };
 }

@@ -15,9 +15,13 @@
 #![allow(dead_code)]
 
 mod manifest;
+mod service;
 mod snapshot;
 
 pub(crate) use manifest::{Manifest, ManifestEntry};
+// Consumed by the eviction hook and the nightly job in follow-up iterations.
+#[allow(unused_imports)]
+pub(crate) use service::{BackupService, RetryPolicy};
 pub(crate) use snapshot::{SnapshotError, snapshot_db_file};
 
 use std::path::PathBuf;

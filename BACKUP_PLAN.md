@@ -42,7 +42,7 @@ branch. Both built with `cargo build --bin trail --no-default-features`
       online-backup API (128-page steps) in `spawn_blocking` with a
       deadline; integrity tests (WAL writes → snapshot →
       `PRAGMA integrity_check` + row counts).
-- [ ] 3. `BackupService`: mpsc queue + dedupe set, worker with
+- [x] 3. `BackupService`: mpsc queue + dedupe set, worker with
       `Semaphore`, mtime-vs-manifest dirty predicate, streaming upload to
       `latest/<name>.db`, retries 1s/5s/25s; tests against
       `object_store::memory::InMemory` (success / transient failure /

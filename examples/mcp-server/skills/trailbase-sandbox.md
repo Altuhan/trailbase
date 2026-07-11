@@ -21,8 +21,8 @@ directly instead — they are enforced by the server's ACLs.
 ## Loop
 
 1. **Create**: call `sandbox_create` (needs `TRAILBASE_DATA_DIR`). It snapshots
-   `main.db` (`VACUUM INTO`), copies config + migrations, starts a private
-   localhost instance. All later admin/schema/records calls target it.
+   `main.db` (SQLite online-backup API), copies config + migrations, starts a
+   private localhost instance. All later admin/schema/records calls target it.
 2. **Inspect** the current schema with `admin_tables` before changing it — the
    `schema_*` tools take TrailBase table/index objects shaped like those
    entries.

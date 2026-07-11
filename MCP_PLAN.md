@@ -10,8 +10,10 @@ stdio) at `examples/mcp-server/` with three access modes — `prod-safe` (record
 APIs only, server-enforced ACLs via a dedicated non-admin user),
 `prod-admin-readonly` (MCP-side policy, read-only admin tools), `sandbox`
 (ephemeral snapshot instance of the depot with full admin) — plus sandbox
-lifecycle tools (`sandbox_create/status/diff/destroy`) built on `VACUUM INTO`
-snapshots and migration-file diffs.
+lifecycle tools (`sandbox_create/status/diff/destroy`) built on SQLite
+online-backup snapshots and migration-file diffs. (Originally `VACUUM INTO`;
+switched after the e2e run showed it re-executes schema SQL, which fails on
+TrailBase's extension functions like `jsonschema`.)
 
 - [x] 1. Package scaffold at `examples/mcp-server/`: package.json (name
       `trailbase-mcp`, node >= 22; deps: `@modelcontextprotocol/sdk`, `zod`,
@@ -47,16 +49,20 @@ snapshots and migration-file diffs.
       schema_create_index/drop_index (via DDL endpoints so migrations get
       recorded — NOT via /query). Extend policy tests to assert the full
       mode matrix. Verify: check + tests.
-- [!] 6. Integration e2e test `tests/integration.test.ts` is WRITTEN and
-      auto-skips when no `trail` binary exists (so unit `pnpm test` stays
-      green: 10 passed, 1 skipped). It could NOT be executed against a real
-      binary in this environment: building `trail` requires the assets
-      crate's build.rs to build the admin SPA, which fails on
-      `@antv/x6`/`tslib` under vite 8 + rolldown (pre-existing, unrelated to
-      this work; also the geos system lib is unavailable — worked around with
-      `--no-default-features --features=trailbase/wasm`). Run this suite in
-      CI or an environment where `trail` builds normally:
-      `cargo build --bin trail && pnpm -C examples/mcp-server test`.
+- [x] 6. Integration e2e test `tests/integration.test.ts`: full pass against a
+      real `trail` binary (11 passed, 0 skipped) — sandbox_create from a real
+      depot snapshot, DDL records a migration file, sandbox_diff surfaces it,
+      insert/select via admin query, destroy stops the server and removes the
+      dir. The run exposed and fixed a real bug: `VACUUM INTO` re-executes
+      schema SQL and fails on TrailBase extension functions (`jsonschema`),
+      so snapshotting now uses the SQLite online-backup API (node:sqlite
+      `backup()`, `sqlite3 .backup` fallback). Environment recipe that
+      unblocked the build: full `pnpm install` (a partial/filtered install
+      leaves the pnpm hoisted-fallback without `tslib`, which `@antv/x6`
+      needs at runtime but only declares as a devDependency), rustup 1.95,
+      `protobuf-compiler`, git submodules, and building without the `geos`
+      feature when libgeos is absent:
+      `cargo build --bin trail --no-default-features --features=trailbase/wasm`.
 - [x] 7. Docs + finalization: `examples/mcp-server/README.md` (modes, security
       model and its limits, `.mcp.json` snippet, sandbox workflow, remote-prod
       degradation), `skills/trailbase-sandbox.md`, entry in

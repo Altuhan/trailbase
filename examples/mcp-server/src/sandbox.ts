@@ -52,25 +52,22 @@ interface ActiveSandbox {
   baselineConfig: string | undefined;
 }
 
-function sqlQuoteSingle(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-
 /// Takes a transactionally consistent snapshot of a (potentially live, WAL)
-/// SQLite database using `VACUUM INTO`. Prefers the built-in `node:sqlite`
-/// and falls back to the `sqlite3` CLI.
+/// SQLite database using the SQLite Online Backup API — page-level copying
+/// that, unlike `VACUUM INTO`, never re-executes schema SQL. That matters
+/// because TrailBase schemas reference extension functions (`jsonschema`,
+/// `is_email`, ...) unknown to vanilla SQLite. Prefers the built-in
+/// `node:sqlite` and falls back to the `sqlite3` CLI's `.backup`.
 export async function snapshotSqliteDb(
   source: string,
   dest: string,
 ): Promise<void> {
-  const vacuum = `VACUUM INTO ${sqlQuoteSingle(dest)}`;
-
   let nodeSqliteError: unknown;
   try {
-    const { DatabaseSync } = await import("node:sqlite");
+    const { DatabaseSync, backup } = await import("node:sqlite");
     const db = new DatabaseSync(source, { readOnly: true });
     try {
-      db.exec(vacuum);
+      await backup(db, dest);
       return;
     } finally {
       db.close();
@@ -80,7 +77,8 @@ export async function snapshotSqliteDb(
   }
 
   try {
-    await spawn("sqlite3", [source, vacuum]);
+    // Quotes inside the dot-command argument: escape by doubling.
+    await spawn("sqlite3", [source, `.backup '${dest.replaceAll("'", "''")}'`]);
     return;
   } catch (cliError) {
     throw new SandboxError(

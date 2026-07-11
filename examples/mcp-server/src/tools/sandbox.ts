@@ -12,7 +12,7 @@ export function registerSandboxTools(
     {
       title: "Create sandbox instance",
       description:
-        "Creates an ephemeral TrailBase sandbox: takes a consistent snapshot of the live depot's main database (VACUUM INTO), copies config and migrations (secrets and sessions are NOT copied — the sandbox gets fresh keys), creates a random-password sandbox admin and starts a `trail` server on a free localhost port. Requires filesystem access to the depot (same host).",
+        "Creates an ephemeral TrailBase sandbox: takes a consistent snapshot of the live depot's main database (SQLite online-backup API), copies config and migrations (secrets and sessions are NOT copied — the sandbox gets fresh keys), creates a random-password sandbox admin and starts a `trail` server on a free localhost port. Requires filesystem access to the depot (same host).",
       inputSchema: {
         source_data_dir: z
           .string()

@@ -79,10 +79,21 @@ maybe("sandbox end-to-end", () => {
         columns: [
           {
             name: "id",
+            type_name: "INTEGER",
             data_type: "Integer",
-            options: [{ Unique: { is_primary: true } }],
+            affinity_type: "Integer",
+            options: [
+              { Unique: { is_primary: true, conflict_clause: null } },
+              "NotNull",
+            ],
           },
-          { name: "body", data_type: "Text", options: [] },
+          {
+            name: "body",
+            type_name: "TEXT",
+            data_type: "Text",
+            affinity_type: "Text",
+            options: [],
+          },
         ],
         foreign_keys: [],
         unique: [],
@@ -106,7 +117,8 @@ maybe("sandbox end-to-end", () => {
     const rows = (await admin.execQuery("SELECT body FROM note")) as {
       rows: unknown[][];
     };
-    expect(rows.rows).toEqual([["hello"]]);
+    // The admin query endpoint returns typed values (serialized SqlValue).
+    expect(rows.rows).toEqual([[{ Text: "hello" }]]);
 
     const destroyed = await sandbox.destroy();
     expect(destroyed.removed).toBe(true);

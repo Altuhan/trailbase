@@ -70,8 +70,9 @@ branch. Both built with `cargo build --bin trail --no-default-features`
       the admin-query p99 fluctuated ±20% across identical binaries, so
       the contour now uses 1000/1500 samples and split tolerances (p50
       5%+100us strict, p99 10%+1ms). Feature docs: BACKUPS.md.
-- [ ] 9. Finalization: `cargo clippy --workspace --no-deps`, `cargo fmt`,
-      full workspace test run, CHANGELOG entry, final summary.
+- [x] 9. Finalization: clippy clean (3 collapsible-if fixes), fmt, test
+      suites green (trailbase 196, sqlite/schema/qs 59, admin vitest 7,
+      e2e drill PASS), CHANGELOG entry, final summary.
 
 ## Baseline (report A)
 

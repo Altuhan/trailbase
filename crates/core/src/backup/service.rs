@@ -147,11 +147,10 @@ impl BackupService {
     }
 
     let mut pending = self.inner.pending.lock();
-    if pending.insert(name.to_string()) {
-      if self.inner.queue.send(Msg::Db(name.to_string())).is_err() {
-        // Worker gone, i.e. runtime shutting down.
-        pending.remove(name);
-      }
+    if pending.insert(name.to_string()) && self.inner.queue.send(Msg::Db(name.to_string())).is_err()
+    {
+      // Worker gone, i.e. runtime shutting down.
+      pending.remove(name);
     }
   }
 

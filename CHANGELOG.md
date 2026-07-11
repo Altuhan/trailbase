@@ -1,3 +1,7 @@
+## Unreleased (fork)
+
+- Built-in remote backups to S3-compatible object stores (Cloudflare R2): dirty databases upload on connection-cache eviction plus a nightly sweep job maintaining dated `epochs/` copies with retention. In-process SQLite online-backup snapshots, streaming multipart uploads, retry-and-stay-dirty failure handling, zero cost when disabled. Configurable via the new admin UI "Backups" settings (config.proto `server.backups`, vault-integrated secret) with `TB_BACKUP_*` env overrides; connection-cache capacity is tunable via `TB_CONN_CACHE_CAPACITY`. See BACKUPS.md; verification tooling under `tools/` (A/B regression contour, filesystem-bucket e2e drill).
+
 ## v0.30.1
 
 - Fix trailbase JS client's type bundling - Thanks @bltavares 🙏.

@@ -92,10 +92,10 @@ impl BackupConfig {
     proto: Option<&crate::config::proto::BackupsConfig>,
   ) -> Result<Option<BackupConfig>, BackupConfigError> {
     let config = Self::from_lookup(&|name| {
-      if let Ok(value) = std::env::var(name) {
-        if !value.is_empty() {
-          return Some(value);
-        }
+      if let Ok(value) = std::env::var(name)
+        && !value.is_empty()
+      {
+        return Some(value);
       }
       let proto = proto?;
       return match name {
@@ -122,13 +122,12 @@ impl BackupConfig {
       },
       ..
     }) = config
+      && secret == "<REDACTED>"
     {
-      if secret == "<REDACTED>" {
-        return Err(BackupConfigError::Invalid(
-          ENV_S3_SECRET_ACCESS_KEY,
-          "unresolved secret placeholder; check the vault or set the env variable".to_string(),
-        ));
-      }
+      return Err(BackupConfigError::Invalid(
+        ENV_S3_SECRET_ACCESS_KEY,
+        "unresolved secret placeholder; check the vault or set the env variable".to_string(),
+      ));
     }
 
     return Ok(config);

@@ -144,3 +144,39 @@ jobs:
       # Just to monitor the runner's disk consumption.
       - name: Monitor Disk Space (End)
         run: df -h
+
+  test-mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'recursive'
+          # No shallow checkout, i.e. fetch all tags (used for versioning the binary).
+          fetch-depth: 0
+
+      - id: free_disk
+        uses: ./.github/actions/free_disk
+
+      - id: setup_build
+        uses: ./.github/actions/setup_build
+
+      - name: "Unit Tests"
+        env:
+          RUST_BACKTRACE: 1
+        run: cargo test -p trailbase-mcp
+
+      - name: "Build trail"
+        env:
+          RUST_BACKTRACE: 1
+        run: cargo build -p trailbase-cli
+
+      - name: "MCP end-to-end (stdio + streamable http)"
+        run: crates/mcp/tests/ci-e2e.sh target/debug/trail
+
+      - name: "TypeScript MCP server tests"
+        run: pnpm -C examples/mcp-server test
+
+      # Just to monitor the runner's disk consumption.
+      - name: Monitor Disk Space (End)
+        run: df -h

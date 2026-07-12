@@ -141,3 +141,13 @@ stdio. From your workstation:
 - [ ] Budgets/confirmation left on (defaults) for `records` mode.
 - [ ] Agent activity reviewed in the admin UI's `_logs` (every tool call is
       logged like a normal HTTP request with the acting user's id).
+
+## 8. Containerized staging via Harbor
+
+For a container-registry-based test environment (Harbor as registry + OCI
+artifact store + Docker Hub proxy cache), see [`deploy/harbor/`](../../deploy/harbor/):
+`setup_harbor.sh` (install), `configure_harbor_api.sh` (projects, scan
+policies, CI robot, retention — all idempotent) and `HARBOR_GUIDE.md` (push the
+`trail` image, push WASM plugins with `oras`, proxy base images in CI).
+[`deploy/docker-compose.staging.yml`](../../deploy/docker-compose.staging.yml)
+runs the image from Harbor with the `--mcp` flags wired in.

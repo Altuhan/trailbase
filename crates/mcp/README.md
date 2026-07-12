@@ -84,6 +84,8 @@ to a socket). That means:
 | `records_create` / `records_update` / `records_delete` | `--mode records` | guarded mutations |
 | `write_confirm` / `write_cancel` | `--mode records` | two-phase write flow |
 | `auth_status` | all | mode, acting user, remaining write budget |
+| `sandbox_create` / `sandbox_status` / `sandbox_destroy` | `--sandbox` (stdio) | ephemeral snapshot instance lifecycle |
+| `sandbox_ddl` / `sandbox_query` / `sandbox_diff` | `--sandbox` (stdio) | schema work recorded as migration files |
 
 Write guards (ported from `examples/mcp-server`, design adapted from
 applix-fr/mcp-trailbase): mutations are parked and only executed by
@@ -95,6 +97,17 @@ in read results.
 In `--mode read-only` (default) the mutation tools respond with a policy
 error and nothing can be written at all.
 
+## Sandbox (`--sandbox`, stdio transport)
+
+`sandbox_create` snapshots the live depot — `main.db` via the SQLite Online
+Backup API plus config and migrations, with **fresh signing keys** (no
+sessions, logs or secrets copied) — and runs it as a disposable child
+`trail` on localhost. Schema changes go through `sandbox_ddl`, so each one
+is recorded as a `U*__*.sql` migration file; `sandbox_diff` returns those
+files — the reviewable artifact you apply to production through your normal
+deploy. `sandbox_query` runs arbitrary SQL there. Production is structurally
+out of reach: sandbox tools only ever talk to the child instance.
+
 ## Audit
 
 Because tool calls run through the real router, every `records_*` call is
@@ -104,12 +117,10 @@ No separate MCP audit trail to maintain.
 
 ## Relation to `examples/mcp-server`
 
-The TypeScript server remains the full-featured option (admin tools and the
-snapshot **sandbox** with migration-file diffs). This crate is the embedded,
-zero-deployment path for record work against a live instance. Deployment
-options across the repo: tarball / Docker / single Bun executable (see
-`examples/mcp-server/README.md`) — or this subcommand, which needs nothing
-but `trail` itself.
+Feature parity: records + guards, introspection, sandbox. The TypeScript
+server remains the out-of-process option (tarball / Docker / single Bun
+executable, see `examples/mcp-server/README.md`); this crate ships inside
+`trail` itself and adds the remote `/mcp` endpoint with per-caller auth.
 
 ## Verification
 
@@ -120,6 +131,7 @@ MCP): see `tests/e2e.mjs` header for setup; it borrows the MCP SDK from
 
 ## Roadmap
 
-- ~~Phase B: schema introspection and audit via `_logs`.~~ Done.
-- ~~Phase C: Streamable HTTP endpoint `/mcp` with per-caller auth.~~ Done.
-- Phase D: snapshot sandbox tools (today: use `examples/mcp-server`).
+All planned phases are implemented: A (records + guards, stdio), B (schema
+introspection + `_logs` audit), C (remote `/mcp` with per-caller auth) and
+D (snapshot sandbox). The TypeScript `examples/mcp-server` remains as the
+out-of-process alternative with the same design.

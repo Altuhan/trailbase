@@ -35,6 +35,7 @@ const transport = new StdioClientTransport({
     "--user", "seed@localhost",
     "--mode", "records",
     "--redact-columns", "secret",
+    "--sandbox",
   ],
   env: { ...process.env, TRAIL_MCP_PASSWORD: "seed-password-123" },
   stderr: "ignore",
@@ -122,6 +123,59 @@ for (let i = 0; i < 20; i++) {
   if (logged > 0) break;
 }
 check(logged > 0, `records_* calls audited in _logs (${logged} rows)`);
+
+// 11. Sandbox: snapshot -> DDL records a migration -> diff -> SQL -> destroy.
+const manifest = asJson(await call("sandbox_create"));
+check(typeof manifest.url === "string" && manifest.url.includes("127.0.0.1"), `sandbox up at ${manifest.url}`);
+const sbStatus = asJson(await call("sandbox_status"));
+check(sbStatus.active === true && sbStatus.healthy === true, "sandbox healthy");
+
+const ddl = await call("sandbox_ddl", {
+  action: "create_table",
+  payload: {
+    schema: {
+      name: { name: "draft", database_schema: null },
+      strict: true,
+      columns: [
+        {
+          name: "id",
+          type_name: "INTEGER",
+          data_type: "Integer",
+          affinity_type: "Integer",
+          options: [{ Unique: { is_primary: true, conflict_clause: null } }, "NotNull"],
+        },
+        { name: "title", type_name: "TEXT", data_type: "Text", affinity_type: "Text", options: [] },
+      ],
+      foreign_keys: [],
+      unique: [],
+      checks: [],
+      virtual_table: false,
+      temporary: false,
+    },
+    dry_run: false,
+  },
+});
+check(!ddl.isError, `sandbox_ddl create_table (${ddl.text.slice(0, 60)})`);
+
+const diff = asJson(await call("sandbox_diff"));
+check(
+  diff.new_migrations.length >= 1 && diff.new_migrations.some((m) => /CREATE TABLE/i.test(m.content)),
+  "diff surfaces the new migration file",
+);
+
+const inserted = await call("sandbox_query", { query: "INSERT INTO draft (title) VALUES ('x')" });
+check(!inserted.isError, "sandbox_query INSERT");
+const selected = await call("sandbox_query", { query: "SELECT title FROM draft" });
+check(!selected.isError && /x/.test(selected.text), "sandbox_query SELECT reads back");
+
+// The live instance is untouched by all of the above.
+const schemaAfter = asJson(await call("schema_tables"));
+check(!schemaAfter.objects.some((o) => o.name === "draft"), "live instance untouched by sandbox DDL");
+
+const destroyed = asJson(await call("sandbox_destroy"));
+check(destroyed.removed === true, "sandbox destroyed");
+const { existsSync } = await import("node:fs");
+check(!existsSync(manifest.data_dir), "sandbox dir removed");
 
 await client.close();
 console.log(failures === 0 ? "ALL PASS" : `${failures} FAILURES`);

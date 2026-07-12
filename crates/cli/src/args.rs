@@ -243,6 +243,12 @@ pub struct McpArgs {
   /// masked in read results.
   #[arg(long, value_delimiter = ',')]
   pub redact_columns: Vec<String>,
+
+  /// Enable ephemeral sandbox tools: sandbox_create snapshots the depot and
+  /// runs a disposable child instance for schema work and arbitrary SQL;
+  /// DDL is recorded as reviewable migration files (sandbox_diff).
+  #[arg(long, default_value_t = false)]
+  pub sandbox: bool,
 }
 
 #[derive(Subcommand, Debug, Clone)]

@@ -359,6 +359,7 @@ async fn async_main(
           confirm_timeout_secs: cmd.confirm_timeout_secs,
           redact_columns: cmd.redact_columns,
         },
+        sandbox: cmd.sandbox,
       })
       .await?;
     }

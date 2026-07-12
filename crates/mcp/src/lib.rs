@@ -20,6 +20,7 @@
 #![warn(clippy::await_holding_lock, clippy::inefficient_to_string)]
 
 mod guards;
+mod sandbox;
 
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -92,6 +93,8 @@ pub struct McpOptions {
   pub user: String,
   pub password: String,
   pub settings: McpSettings,
+  /// Enable ephemeral snapshot-sandbox tools (stdio transport only).
+  pub sandbox: bool,
 }
 
 /// Boots the instance from the given depot and serves MCP over stdio until
@@ -138,6 +141,7 @@ pub async fn run_stdio(options: McpOptions) -> Result<(), BoxError> {
   let router = Arc::new(OnceLock::new());
   let _ = router.set(server.main_router.1.clone());
 
+  let source_dir = state.data_dir().root().clone();
   let handler = TrailBaseMcp(Arc::new(Inner {
     router,
     state,
@@ -153,6 +157,8 @@ pub async fn run_stdio(options: McpOptions) -> Result<(), BoxError> {
       options.settings.confirm_timeout_secs,
     )),
     redact_patterns,
+    sandbox_enabled: options.sandbox,
+    sandbox: tokio::sync::Mutex::new(sandbox::SandboxManager::new(source_dir)),
   }));
 
   log::info!(
@@ -189,6 +195,7 @@ pub fn http_service(
   }
 
   let factory = move || {
+    let source_dir = state.data_dir().root().clone();
     return Ok(TrailBaseMcp(Arc::new(Inner {
       router: router.clone(),
       state: state.clone(),
@@ -201,6 +208,10 @@ pub fn http_service(
         settings.confirm_timeout_secs,
       )),
       redact_patterns: redact_patterns.clone(),
+      // Spawning sandbox children from network-triggered sessions is not
+      // supported; use the stdio transport for sandbox work.
+      sandbox_enabled: false,
+      sandbox: tokio::sync::Mutex::new(sandbox::SandboxManager::new(source_dir)),
     })));
   };
 
@@ -235,6 +246,8 @@ struct Inner {
   mode: McpMode,
   guards: Mutex<Guards>,
   redact_patterns: Vec<regex::Regex>,
+  sandbox_enabled: bool,
+  sandbox: tokio::sync::Mutex<sandbox::SandboxManager>,
 }
 
 fn internal(err: impl std::fmt::Display) -> McpError {
@@ -342,6 +355,26 @@ pub struct RecordsDeleteParams {
 pub struct PendingParams {
   /// `pending_id` returned by a records_* mutation.
   pub pending_id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct SandboxQueryParams {
+  /// SQL statement to execute on the sandbox instance.
+  pub query: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct SandboxDdlParams {
+  /// One of: create_table, alter_table, drop_table, create_index, drop_index.
+  pub action: String,
+  /// Request body for the corresponding sandbox admin endpoint.
+  pub payload: serde_json::Map<String, Value>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct SandboxDestroyParams {
+  /// Keep the sandbox directory on disk instead of deleting it.
+  pub keep_dir: Option<bool>,
 }
 
 #[tool_router]
@@ -795,6 +828,138 @@ impl TrailBaseMcp {
     };
   }
 
+  /// Ready-to-return error when sandbox tools are disabled.
+  fn sandbox_disabled(&self) -> Option<CallToolResult> {
+    if self.0.sandbox_enabled {
+      return None;
+    }
+    return Some(CallToolResult::error(vec![ContentBlock::text(
+      "Sandbox tools are disabled; start `trail mcp` with --sandbox (stdio transport only).",
+    )]));
+  }
+
+  #[tool(
+    description = "Creates an ephemeral sandbox: a consistent snapshot of the live depot (data + config + migrations, fresh keys) served by a child trail process on localhost. All sandbox_* tools target it; production is never touched."
+  )]
+  async fn sandbox_create(&self) -> Result<CallToolResult, McpError> {
+    if let Some(disabled) = self.sandbox_disabled() {
+      return Ok(disabled);
+    }
+    let mut sandbox = self.0.sandbox.lock().await;
+    return match sandbox.create().await {
+      Ok(manifest) => json_result(&manifest),
+      Err(e) => error_result(e.to_string()),
+    };
+  }
+
+  #[tool(description = "Reports whether a sandbox is running and healthy.")]
+  async fn sandbox_status(&self) -> Result<CallToolResult, McpError> {
+    if let Some(disabled) = self.sandbox_disabled() {
+      return Ok(disabled);
+    }
+    let mut sandbox = self.0.sandbox.lock().await;
+    let status = sandbox.status().await;
+    return json_result(&status);
+  }
+
+  #[tool(
+    description = "Executes arbitrary SQL on the SANDBOX instance (admin endpoint of the ephemeral child; runs on its writer connection). Prefer sandbox_ddl for schema changes so they are recorded as migration files."
+  )]
+  async fn sandbox_query(
+    &self,
+    params: Parameters<SandboxQueryParams>,
+  ) -> Result<CallToolResult, McpError> {
+    if let Some(disabled) = self.sandbox_disabled() {
+      return Ok(disabled);
+    }
+    let sandbox = self.0.sandbox.lock().await;
+    let result = sandbox
+      .admin_call(
+        reqwest::Method::POST,
+        "/query",
+        Some(&json!({ "query": params.0.query })),
+      )
+      .await;
+    drop(sandbox);
+    return match result {
+      Ok((status, value)) => self.respond(
+        StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        value,
+        false,
+      ),
+      Err(e) => error_result(e.to_string()),
+    };
+  }
+
+  #[tool(
+    description = "Applies DDL to the SANDBOX through its admin API so the change is recorded as a migration file. Actions map to the admin endpoints: create_table/alter_table/drop_table (POST/PATCH/DELETE /table) and create_index/drop_index (POST/DELETE /index). `payload` is the endpoint's request body, e.g. {\"schema\": <Table>, \"dry_run\": false} for create_table — inspect schema_tables/admin shapes first."
+  )]
+  async fn sandbox_ddl(
+    &self,
+    params: Parameters<SandboxDdlParams>,
+  ) -> Result<CallToolResult, McpError> {
+    if let Some(disabled) = self.sandbox_disabled() {
+      return Ok(disabled);
+    }
+    let p = params.0;
+    let (method, path) = match p.action.as_str() {
+      "create_table" => (reqwest::Method::POST, "/table"),
+      "alter_table" => (reqwest::Method::PATCH, "/table"),
+      "drop_table" => (reqwest::Method::DELETE, "/table"),
+      "create_index" => (reqwest::Method::POST, "/index"),
+      "drop_index" => (reqwest::Method::DELETE, "/index"),
+      other => {
+        return error_result(format!(
+          "Unknown action '{other}'; expected create_table|alter_table|drop_table|create_index|drop_index."
+        ));
+      }
+    };
+    let sandbox = self.0.sandbox.lock().await;
+    let result = sandbox
+      .admin_call(method, path, Some(&Value::Object(p.payload)))
+      .await;
+    drop(sandbox);
+    return match result {
+      Ok((status, value)) => self.respond(
+        StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        value,
+        false,
+      ),
+      Err(e) => error_result(e.to_string()),
+    };
+  }
+
+  #[tool(
+    description = "Shows what changed in the sandbox since creation: newly recorded migration files (the reviewable artifact to apply to production through your normal deploy) and config changes. Never applies anything to production."
+  )]
+  async fn sandbox_diff(&self) -> Result<CallToolResult, McpError> {
+    if let Some(disabled) = self.sandbox_disabled() {
+      return Ok(disabled);
+    }
+    let sandbox = self.0.sandbox.lock().await;
+    return match sandbox.diff() {
+      Ok(diff) => json_result(&diff),
+      Err(e) => error_result(e.to_string()),
+    };
+  }
+
+  #[tool(
+    description = "Stops the sandbox instance and removes its directory (pass keep_dir=true to keep the files on disk for inspection)."
+  )]
+  async fn sandbox_destroy(
+    &self,
+    params: Parameters<SandboxDestroyParams>,
+  ) -> Result<CallToolResult, McpError> {
+    if let Some(disabled) = self.sandbox_disabled() {
+      return Ok(disabled);
+    }
+    let mut sandbox = self.0.sandbox.lock().await;
+    return match sandbox.destroy(params.0.keep_dir.unwrap_or(false)).await {
+      Ok(result) => json_result(&result),
+      Err(e) => error_result(e.to_string()),
+    };
+  }
+
   #[tool(
     description = "Reports transport, access mode, acting user and remaining write budget of this MCP session."
   )]
@@ -803,6 +968,7 @@ impl TrailBaseMcp {
       let guards = self.0.guards.lock().expect("poisoned");
       (guards.confirm_writes(), guards.budget_remaining())
     };
+    let sandbox_active = self.0.sandbox_enabled && self.0.sandbox.lock().await.is_active();
     let user = match (&self.0.auth, &self.0.acting_user) {
       (AuthSource::Fixed(_), Some(user)) => {
         json!({ "email": user.email, "id": user.id.to_string() })
@@ -824,6 +990,10 @@ impl TrailBaseMcp {
         "budget_remaining": remaining
           .map(Value::from)
           .unwrap_or_else(|| Value::from("unlimited")),
+      },
+      "sandbox": {
+        "enabled": self.0.sandbox_enabled,
+        "active": sandbox_active,
       },
     }));
   }

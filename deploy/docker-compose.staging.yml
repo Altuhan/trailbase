@@ -1,0 +1,29 @@
+# Staging TrailBase with the embedded MCP endpoint, image pulled from Harbor.
+#
+# Prereq: the depot dir must exist and be owned by the image's user (uid 1000),
+# because compose auto-creates missing dirs as root and the image drops root:
+#   mkdir -p traildepot-staging && sudo chown 1000:1000 traildepot-staging
+#
+# Then: docker compose -f docker-compose.staging.yml up -d
+services:
+  trail-staging:
+    # Built and pushed per deploy/harbor/HARBOR_GUIDE.md.
+    image: harbor.local/trailbase-prod/trailbase:0.30.1-mcp
+    ports:
+      - "4001:4000"
+    restart: unless-stopped
+    volumes:
+      - ./traildepot-staging:/app/traildepot
+    environment:
+      RUST_BACKTRACE: "1"
+    # Enable the MCP endpoint. --mcp-allowed-hosts MUST list exactly how clients
+    # reach this instance (DNS-rebinding protection allows only loopback
+    # otherwise). Raise auth_token_ttl_sec in the depot config for static
+    # Bearer tokens — see crates/mcp/DEPLOYMENT.md.
+    command: >
+      /app/trail --data-dir /app/traildepot run
+      --address 0.0.0.0:4000
+      --mcp
+      --mcp-mode records
+      --mcp-redact-columns cost_price,password,token
+      --mcp-allowed-hosts staging.izimag.kz,localhost:4001

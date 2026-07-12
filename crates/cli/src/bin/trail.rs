@@ -77,6 +77,35 @@ async fn async_main(
       })
       .await?;
 
+      // Optional MCP endpoint: the service needs the final router for its
+      // in-process calls, which only exists after Server::init — hence the
+      // OnceLock slot filled right below.
+      let mcp = if cmd.mcp {
+        let settings = trailbase_mcp::McpSettings {
+          mode: match cmd.mcp_mode {
+            McpModeArg::ReadOnly => trailbase_mcp::McpMode::ReadOnly,
+            McpModeArg::Records => trailbase_mcp::McpMode::Records,
+          },
+          budget_writes: cmd.mcp_budget_writes,
+          confirm_writes: cmd.mcp_confirm_writes,
+          confirm_timeout_secs: cmd.mcp_confirm_timeout_secs,
+          redact_columns: cmd.mcp_redact_columns.clone(),
+        };
+        let router_slot = std::sync::Arc::new(std::sync::OnceLock::new());
+        let service = trailbase_mcp::http_service(
+          state.clone(),
+          router_slot.clone(),
+          &settings,
+          &cmd.mcp_allowed_hosts,
+        )?;
+        Some((
+          router_slot,
+          axum::Router::new().route_service("/mcp", service),
+        ))
+      } else {
+        None
+      };
+
       let app = Server::init(
         state,
         ServerOptions {
@@ -88,10 +117,15 @@ async fn async_main(
           cors_allowed_origins: cmd.cors_allowed_origins,
           tls_key: None,
           tls_cert: None,
-          custom_router: None,
+          custom_router: mcp.as_ref().map(|(_, router)| router.clone()),
         },
       )
       .await?;
+
+      if let Some((router_slot, _)) = mcp {
+        let _ = router_slot.set(app.main_router.1.clone());
+        log::info!("MCP endpoint mounted at /mcp (streamable HTTP)");
+      }
 
       app.serve().await?;
     }
@@ -315,14 +349,16 @@ async fn async_main(
         public_url,
         user: cmd.user,
         password,
-        mode: match cmd.mode {
-          McpModeArg::ReadOnly => trailbase_mcp::McpMode::ReadOnly,
-          McpModeArg::Records => trailbase_mcp::McpMode::Records,
+        settings: trailbase_mcp::McpSettings {
+          mode: match cmd.mode {
+            McpModeArg::ReadOnly => trailbase_mcp::McpMode::ReadOnly,
+            McpModeArg::Records => trailbase_mcp::McpMode::Records,
+          },
+          budget_writes: cmd.budget_writes,
+          confirm_writes: cmd.confirm_writes,
+          confirm_timeout_secs: cmd.confirm_timeout_secs,
+          redact_columns: cmd.redact_columns,
         },
-        budget_writes: cmd.budget_writes,
-        confirm_writes: cmd.confirm_writes,
-        confirm_timeout_secs: cmd.confirm_timeout_secs,
-        redact_columns: cmd.redact_columns,
       })
       .await?;
     }

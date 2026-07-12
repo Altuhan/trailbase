@@ -140,6 +140,39 @@ pub struct ServerArgs {
 
   #[arg(long, env)]
   pub experimental_pg: Option<String>,
+
+  /// Expose a Model Context Protocol endpoint at /mcp (Streamable HTTP).
+  /// MCP tool calls forward the caller's `Authorization` header, so every
+  /// client acts under its own TrailBase account and record API ACLs.
+  #[arg(long, default_value_t = false)]
+  pub mcp: bool,
+
+  /// Which MCP tools to expose on /mcp.
+  #[arg(long, value_enum, default_value_t = McpModeArg::ReadOnly)]
+  pub mcp_mode: McpModeArg,
+
+  /// Record mutations allowed per MCP session; 0 = unlimited.
+  #[arg(long, default_value_t = 100)]
+  pub mcp_budget_writes: u32,
+
+  /// Two-phase record mutations on /mcp: park + write_confirm.
+  #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+  pub mcp_confirm_writes: bool,
+
+  /// Seconds until an unconfirmed MCP mutation expires.
+  #[arg(long, default_value_t = 120)]
+  pub mcp_confirm_timeout_secs: u64,
+
+  /// Comma-separated case-insensitive regexes; matching column names are
+  /// masked in MCP read results.
+  #[arg(long, value_delimiter = ',')]
+  pub mcp_redact_columns: Vec<String>,
+
+  /// Host names/authorities accepted by the /mcp endpoint (DNS-rebinding
+  /// protection). Defaults to loopback only — public deployments must list
+  /// their domain, e.g. `api.example.com`.
+  #[arg(long, value_delimiter = ',')]
+  pub mcp_allowed_hosts: Vec<String>,
 }
 
 #[derive(Args, Clone, Debug)]

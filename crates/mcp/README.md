@@ -1,7 +1,14 @@
 # trailbase-mcp — MCP server inside `trail`
 
-Status: **MVP** (records tier). Serves the Model Context Protocol over stdio
-straight from the TrailBase binary:
+Two transports, one tool set, zero extra deployment:
+
+- **stdio** (`trail mcp`) — for local/SSH use; tools act as one dedicated
+  user logged in at startup.
+- **Streamable HTTP** (`trail run --mcp`) — a `/mcp` endpoint on the running
+  server; every tool call forwards the **caller's** `Authorization` header,
+  so each MCP client acts under its own TrailBase account and ACLs.
+
+## stdio
 
 ```bash
 TRAIL_MCP_PASSWORD=… trail --data-dir ./traildepot mcp \
@@ -20,6 +27,33 @@ TRAIL_MCP_PASSWORD=… trail --data-dir ./traildepot mcp \
   },
 }
 ```
+
+## Remote (`/mcp` on the running server)
+
+```bash
+trail run --mcp --mcp-mode records \
+    --mcp-redact-columns password,token \
+    --mcp-allowed-hosts api.example.com   # required for non-loopback hosts
+```
+
+Connect from Claude Code with a TrailBase auth token (from
+`/api/auth/v1/login` or a client library):
+
+```bash
+claude mcp add --transport http trailbase https://api.example.com/mcp \
+    --header "Authorization: Bearer <auth token>"
+```
+
+Notes:
+
+- Credentials are per request: the endpoint holds no tokens, and two clients
+  connecting with different accounts get different ACLs — enforced by the
+  same server code as any network request.
+- The MCP handshake itself does not require a token; every data tool does
+  (introspection tools like `schema_tables` respond without one). Guard
+  state (budget, pending confirmations) is per MCP session.
+- `--mcp-allowed-hosts` implements DNS-rebinding protection; loopback only
+  by default.
 
 ## Why in-process
 
@@ -84,9 +118,8 @@ binary, drives park → confirm → redacted read → server-side 403 → cancel
 MCP): see `tests/e2e.mjs` header for setup; it borrows the MCP SDK from
 `examples/mcp-server/node_modules`.
 
-## Roadmap (not in the MVP)
+## Roadmap
 
-- Phase B: admin introspection tools and audit entries in `_logs`.
-- Phase C: Streamable HTTP endpoint (`/mcp`) on the running server behind
-  TrailBase auth — remote MCP without any local process.
+- ~~Phase B: schema introspection and audit via `_logs`.~~ Done.
+- ~~Phase C: Streamable HTTP endpoint `/mcp` with per-caller auth.~~ Done.
 - Phase D: snapshot sandbox tools (today: use `examples/mcp-server`).

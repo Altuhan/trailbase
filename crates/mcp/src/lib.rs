@@ -1,12 +1,16 @@
 //! MCP server embedded into TrailBase.
 //!
-//! `trail mcp` speaks the Model Context Protocol over stdio and translates
-//! tool calls into **in-process** requests against TrailBase's real axum
-//! router: the exact same auth middleware, record API handlers and ACL
-//! checks run as for network traffic, but no socket is ever bound. Tool
-//! calls act as a dedicated (non-admin) user whose credentials are checked
-//! with the regular login flow at startup, so everything the agent can see
-//! or change is enforced server-side.
+//! Tool calls are translated into **in-process** requests against
+//! TrailBase's real axum router: the exact same auth middleware, record API
+//! handlers and ACL checks run as for network traffic. Two transports share
+//! the same tool set:
+//!
+//! - `trail mcp` — stdio; tool calls act as one dedicated user whose
+//!   credentials are checked with the regular login flow at startup.
+//! - `trail run --mcp` — a Streamable HTTP endpoint at `/mcp` on the running
+//!   server; every tool call forwards the **caller's** `Authorization`
+//!   header, so each MCP client works under its own TrailBase account and
+//!   ACLs.
 //!
 //! Record mutations are additionally protected by write guards (budget,
 //! two-phase confirmation, column redaction) ported from
@@ -17,16 +21,21 @@
 
 mod guards;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use rmcp::{
-  ErrorData as McpError, ServerHandler, ServiceExt as _,
+  ErrorData as McpError, RoleServer, ServerHandler, ServiceExt as _,
   handler::server::wrapper::Parameters,
   model::{CallToolResult, ContentBlock, ServerCapabilities, ServerInfo},
-  schemars, tool, tool_handler, tool_router,
+  schemars,
+  service::RequestContext,
+  tool, tool_handler, tool_router,
   transport::stdio,
+  transport::streamable_http_server::{
+    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+  },
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -50,14 +59,24 @@ pub enum McpMode {
   Records,
 }
 
-pub struct McpOptions {
-  pub data_dir: DataDir,
-  pub public_url: Option<url::Url>,
-  /// Email of the user tool calls act as; record API ACLs apply server-side.
-  pub user: String,
-  pub password: String,
+/// Where tool calls take their TrailBase credentials from.
+enum AuthSource {
+  /// stdio: full `Authorization` header value minted by the startup login.
+  Fixed(String),
+  /// Streamable HTTP: forwarded per request from the caller's header.
+  PerRequest,
+}
+
+struct ActingUser {
+  email: String,
+  id: uuid::Uuid,
+}
+
+/// Shared guard/tool settings for both transports.
+#[derive(Clone, Debug)]
+pub struct McpSettings {
   pub mode: McpMode,
-  /// Mutations allowed per process; 0 = unlimited.
+  /// Mutations allowed per session; 0 = unlimited.
   pub budget_writes: u32,
   /// Two-phase (propose/confirm) record mutations.
   pub confirm_writes: bool,
@@ -66,10 +85,19 @@ pub struct McpOptions {
   pub redact_columns: Vec<String>,
 }
 
+pub struct McpOptions {
+  pub data_dir: DataDir,
+  pub public_url: Option<url::Url>,
+  /// Email of the user tool calls act as; record API ACLs apply server-side.
+  pub user: String,
+  pub password: String,
+  pub settings: McpSettings,
+}
+
 /// Boots the instance from the given depot and serves MCP over stdio until
 /// the client disconnects. Never binds a network listener.
 pub async fn run_stdio(options: McpOptions) -> Result<(), BoxError> {
-  let redact_patterns = compile_redact_patterns(&options.redact_columns)?;
+  let redact_patterns = compile_redact_patterns(&options.settings.redact_columns)?;
 
   let (_new, state) = AppState::init(InitArgs {
     data_dir: options.data_dir.clone(),
@@ -107,30 +135,80 @@ pub async fn run_stdio(options: McpOptions) -> Result<(), BoxError> {
   )
   .await?;
 
+  let router = Arc::new(OnceLock::new());
+  let _ = router.set(server.main_router.1.clone());
+
   let handler = TrailBaseMcp(Arc::new(Inner {
-    router: server.main_router.1.clone(),
+    router,
     state,
-    auth_token: tokens.auth_token,
-    user_email: options.user,
-    user_id: tokens.id,
-    mode: options.mode,
+    auth: AuthSource::Fixed(format!("Bearer {}", tokens.auth_token)),
+    acting_user: Some(ActingUser {
+      email: options.user.clone(),
+      id: tokens.id,
+    }),
+    mode: options.settings.mode,
     guards: Mutex::new(Guards::new(
-      options.budget_writes,
-      options.mode == McpMode::Records && options.confirm_writes,
-      options.confirm_timeout_secs,
+      options.settings.budget_writes,
+      options.settings.mode == McpMode::Records && options.settings.confirm_writes,
+      options.settings.confirm_timeout_secs,
     )),
     redact_patterns,
   }));
 
   log::info!(
     "trail mcp: stdio server ready (mode={:?}, acting user={})",
-    options.mode,
-    handler.0.user_email
+    options.settings.mode,
+    options.user
   );
 
   let service = handler.serve(stdio()).await?;
   service.waiting().await?;
   return Ok(());
+}
+
+/// Builds the Streamable HTTP tower service for mounting at `/mcp` on the
+/// running server (`trail run --mcp`). The `router` slot is filled by the
+/// caller once `Server::init` has produced the final router — the service
+/// only dereferences it per tool call.
+///
+/// Each MCP session gets its own handler instance (and thus its own write
+/// budget and pending-confirmation queue); credentials are taken from each
+/// request's `Authorization` header, so callers act as themselves.
+pub fn http_service(
+  state: AppState,
+  router: Arc<OnceLock<axum::Router>>,
+  settings: &McpSettings,
+  allowed_hosts: &[String],
+) -> Result<StreamableHttpService<TrailBaseMcp, LocalSessionManager>, BoxError> {
+  let redact_patterns = compile_redact_patterns(&settings.redact_columns)?;
+  let settings = settings.clone();
+
+  let mut config = StreamableHttpServerConfig::default();
+  if !allowed_hosts.is_empty() {
+    config.allowed_hosts = allowed_hosts.to_vec();
+  }
+
+  let factory = move || {
+    return Ok(TrailBaseMcp(Arc::new(Inner {
+      router: router.clone(),
+      state: state.clone(),
+      auth: AuthSource::PerRequest,
+      acting_user: None,
+      mode: settings.mode,
+      guards: Mutex::new(Guards::new(
+        settings.budget_writes,
+        settings.mode == McpMode::Records && settings.confirm_writes,
+        settings.confirm_timeout_secs,
+      )),
+      redact_patterns: redact_patterns.clone(),
+    })));
+  };
+
+  return Ok(StreamableHttpService::new(
+    factory,
+    Arc::new(LocalSessionManager::default()),
+    config,
+  ));
 }
 
 fn compile_redact_patterns(patterns: &[String]) -> Result<Vec<regex::Regex>, BoxError> {
@@ -139,7 +217,7 @@ fn compile_redact_patterns(patterns: &[String]) -> Result<Vec<regex::Regex>, Box
     .filter(|p| !p.trim().is_empty())
     .map(|p| {
       regex::Regex::new(&format!("(?i){}", p.trim()))
-        .map_err(|err| format!("Invalid --redact-columns pattern '{p}': {err}").into())
+        .map_err(|err| format!("Invalid redact-columns pattern '{p}': {err}").into())
     })
     .collect();
 }
@@ -148,11 +226,12 @@ fn compile_redact_patterns(patterns: &[String]) -> Result<Vec<regex::Regex>, Box
 pub struct TrailBaseMcp(Arc<Inner>);
 
 struct Inner {
-  router: axum::Router,
+  /// The final router from `Server::init`; a slot because in HTTP mode the
+  /// MCP service itself is part of that router (set right after init).
+  router: Arc<OnceLock<axum::Router>>,
   state: AppState,
-  auth_token: String,
-  user_email: String,
-  user_id: uuid::Uuid,
+  auth: AuthSource,
+  acting_user: Option<ActingUser>,
   mode: McpMode,
   guards: Mutex<Guards>,
   redact_patterns: Vec<regex::Regex>,
@@ -267,21 +346,48 @@ pub struct PendingParams {
 
 #[tool_router]
 impl TrailBaseMcp {
-  /// Sends one request through the in-process router with the acting user's
-  /// token attached; auth middleware and ACLs run exactly as over the network.
+  /// Resolves the `Authorization` header value for this call: the startup
+  /// login's token (stdio) or the caller's own header (HTTP). The error arm
+  /// is a ready-to-return tool result instructing the client to
+  /// authenticate.
+  fn auth_header(&self, ctx: &RequestContext<RoleServer>) -> Result<String, CallToolResult> {
+    match &self.0.auth {
+      AuthSource::Fixed(header_value) => Ok(header_value.clone()),
+      AuthSource::PerRequest => ctx
+        .extensions
+        .get::<axum::http::request::Parts>()
+        .and_then(|parts| parts.headers.get(header::AUTHORIZATION))
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+        .ok_or_else(|| {
+          CallToolResult::error(vec![ContentBlock::text(
+            "Not authenticated: connect with an 'Authorization: Bearer <TrailBase auth token>' \
+             header (obtain one via /api/auth/v1/login).",
+          )])
+        }),
+    }
+  }
+
+  /// Sends one request through the in-process router; auth middleware and
+  /// ACLs run exactly as over the network.
   async fn call(
     &self,
+    auth_header: &str,
     method: &str,
     path_and_query: &str,
     body: Option<&Value>,
   ) -> Result<(StatusCode, Value), McpError> {
+    let router = self
+      .0
+      .router
+      .get()
+      .ok_or_else(|| internal("router not initialized yet"))?
+      .clone();
+
     let mut builder = Request::builder()
       .method(method)
       .uri(path_and_query)
-      .header(
-        header::AUTHORIZATION,
-        format!("Bearer {}", self.0.auth_token),
-      );
+      .header(header::AUTHORIZATION, auth_header);
     if body.is_some() {
       builder = builder.header(header::CONTENT_TYPE, "application/json");
     }
@@ -291,13 +397,7 @@ impl TrailBaseMcp {
     }
     .map_err(internal)?;
 
-    let response = self
-      .0
-      .router
-      .clone()
-      .oneshot(request)
-      .await
-      .map_err(internal)?;
+    let response = router.oneshot(request).await.map_err(internal)?;
     let status = response.status();
     let bytes = axum::body::to_bytes(response.into_body(), MAX_RESPONSE_BYTES)
       .await
@@ -332,6 +432,7 @@ impl TrailBaseMcp {
   /// executed directly against the budget.
   async fn guarded_write(
     &self,
+    auth_header: &str,
     tool: &str,
     summary: String,
     method: &str,
@@ -340,7 +441,7 @@ impl TrailBaseMcp {
   ) -> Result<CallToolResult, McpError> {
     if self.0.mode != McpMode::Records {
       return error_result(
-        "Mutations are disabled in read-only mode; restart `trail mcp` with `--mode records`.",
+        "Mutations are disabled in read-only mode; the server must be restarted with mode 'records'.",
       );
     }
 
@@ -379,7 +480,7 @@ impl TrailBaseMcp {
         }));
       }
       Next::Execute => {
-        let (status, value) = self.call(method, &path, body.as_ref()).await?;
+        let (status, value) = self.call(auth_header, method, &path, body.as_ref()).await?;
         return self.respond(status, value, false);
       }
     }
@@ -402,201 +503,6 @@ impl TrailBaseMcp {
         .collect();
     });
     return json_result(&json!({ "record_apis": apis }));
-  }
-
-  #[tool(description = "Fetches the JSON schema describing records of the given record API.")]
-  async fn records_schema(
-    &self,
-    params: Parameters<RecordsSchemaParams>,
-  ) -> Result<CallToolResult, McpError> {
-    let api = encode_segment(&params.0.api)?;
-    let (status, value) = self
-      .call("GET", &format!("{RECORDS_BASE}/{api}/schema"), None)
-      .await?;
-    return self.respond(status, value, false);
-  }
-
-  #[tool(
-    description = "Lists records of a TrailBase record API with optional filters, ordering and cursor/offset pagination. Access is enforced server-side by the API's ACLs for the acting user."
-  )]
-  async fn records_list(
-    &self,
-    params: Parameters<RecordsListParams>,
-  ) -> Result<CallToolResult, McpError> {
-    let p = params.0;
-    let api = encode_segment(&p.api)?;
-
-    // Scoped so the (non-Send) serializer is dropped before any await.
-    let query = {
-      let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-      if let Some(limit) = p.limit {
-        serializer.append_pair("limit", &limit.to_string());
-      }
-      if let Some(ref cursor) = p.cursor {
-        serializer.append_pair("cursor", cursor);
-      }
-      if let Some(offset) = p.offset {
-        serializer.append_pair("offset", &offset.to_string());
-      }
-      if let Some(ref order) = p.order
-        && !order.is_empty()
-      {
-        serializer.append_pair("order", &order.join(","));
-      }
-      if p.count == Some(true) {
-        serializer.append_pair("count", "true");
-      }
-      if let Some(ref expand) = p.expand
-        && !expand.is_empty()
-      {
-        serializer.append_pair("expand", &expand.join(","));
-      }
-      let mut query = serializer.finish();
-      if let Some(ref filter) = p.filter
-        && !filter.is_empty()
-      {
-        if !query.is_empty() {
-          query.push('&');
-        }
-        query.push_str(filter);
-      }
-      query
-    };
-
-    let path = if query.is_empty() {
-      format!("{RECORDS_BASE}/{api}")
-    } else {
-      format!("{RECORDS_BASE}/{api}?{query}")
-    };
-    let (status, value) = self.call("GET", &path, None).await?;
-    return self.respond(status, value, true);
-  }
-
-  #[tool(description = "Reads a single record by id from a TrailBase record API.")]
-  async fn records_read(
-    &self,
-    params: Parameters<RecordsReadParams>,
-  ) -> Result<CallToolResult, McpError> {
-    let p = params.0;
-    let api = encode_segment(&p.api)?;
-    let id = encode_segment(&p.id)?;
-    let mut path = format!("{RECORDS_BASE}/{api}/{id}");
-    if let Some(ref expand) = p.expand
-      && !expand.is_empty()
-    {
-      // Scoped so the (non-Send) serializer is dropped before any await.
-      let query = {
-        let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-        serializer.append_pair("expand", &expand.join(","));
-        serializer.finish()
-      };
-      path = format!("{path}?{query}");
-    }
-    let (status, value) = self.call("GET", &path, None).await?;
-    return self.respond(status, value, true);
-  }
-
-  #[tool(
-    description = "Creates a record via a TrailBase record API. Write access is enforced server-side; in records mode the mutation may require write_confirm."
-  )]
-  async fn records_create(
-    &self,
-    params: Parameters<RecordsCreateParams>,
-  ) -> Result<CallToolResult, McpError> {
-    let p = params.0;
-    let api = encode_segment(&p.api)?;
-    let columns = p.record.keys().cloned().collect::<Vec<_>>().join(", ");
-    return self
-      .guarded_write(
-        "records_create",
-        format!("create record in '{}' with columns [{columns}]", p.api),
-        "POST",
-        format!("{RECORDS_BASE}/{api}"),
-        Some(Value::Object(p.record)),
-      )
-      .await;
-  }
-
-  #[tool(description = "Partially updates an existing record by id.")]
-  async fn records_update(
-    &self,
-    params: Parameters<RecordsUpdateParams>,
-  ) -> Result<CallToolResult, McpError> {
-    let p = params.0;
-    let api = encode_segment(&p.api)?;
-    let id = encode_segment(&p.id)?;
-    let columns = p.record.keys().cloned().collect::<Vec<_>>().join(", ");
-    return self
-      .guarded_write(
-        "records_update",
-        format!(
-          "update record '{}' in '{}', columns [{columns}]",
-          p.id, p.api
-        ),
-        "PATCH",
-        format!("{RECORDS_BASE}/{api}/{id}"),
-        Some(Value::Object(p.record)),
-      )
-      .await;
-  }
-
-  #[tool(description = "Deletes a record by id.")]
-  async fn records_delete(
-    &self,
-    params: Parameters<RecordsDeleteParams>,
-  ) -> Result<CallToolResult, McpError> {
-    let p = params.0;
-    let api = encode_segment(&p.api)?;
-    let id = encode_segment(&p.id)?;
-    return self
-      .guarded_write(
-        "records_delete",
-        format!("delete record '{}' from '{}'", p.id, p.api),
-        "DELETE",
-        format!("{RECORDS_BASE}/{api}/{id}"),
-        None,
-      )
-      .await;
-  }
-
-  #[tool(
-    description = "Executes a record mutation previously parked by records_create/update/delete. Confirming charges the write budget."
-  )]
-  async fn write_confirm(
-    &self,
-    params: Parameters<PendingParams>,
-  ) -> Result<CallToolResult, McpError> {
-    let pending = {
-      let mut guards = self.0.guards.lock().expect("poisoned");
-      match guards.confirm(&params.0.pending_id) {
-        Ok(pending) => pending,
-        Err(err) => return error_result(err.to_string()),
-      }
-    };
-    let (status, value) = self
-      .call(&pending.method, &pending.path, pending.body.as_ref())
-      .await?;
-    return self.respond(status, value, false);
-  }
-
-  #[tool(
-    description = "Discards a parked record mutation without executing it or charging the budget."
-  )]
-  async fn write_cancel(
-    &self,
-    params: Parameters<PendingParams>,
-  ) -> Result<CallToolResult, McpError> {
-    let cancelled = {
-      let mut guards = self.0.guards.lock().expect("poisoned");
-      guards.cancel(&params.0.pending_id)
-    };
-    return match cancelled {
-      Ok(pending) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-        "Cancelled without executing: {}",
-        pending.summary
-      ))])),
-      Err(err) => error_result(err.to_string()),
-    };
   }
 
   #[tool(
@@ -656,21 +562,263 @@ impl TrailBaseMcp {
     }));
   }
 
+  #[tool(description = "Fetches the JSON schema describing records of the given record API.")]
+  async fn records_schema(
+    &self,
+    params: Parameters<RecordsSchemaParams>,
+    ctx: RequestContext<RoleServer>,
+  ) -> Result<CallToolResult, McpError> {
+    let auth = match self.auth_header(&ctx) {
+      Ok(auth) => auth,
+      Err(result) => return Ok(result),
+    };
+    let api = encode_segment(&params.0.api)?;
+    let (status, value) = self
+      .call(&auth, "GET", &format!("{RECORDS_BASE}/{api}/schema"), None)
+      .await?;
+    return self.respond(status, value, false);
+  }
+
   #[tool(
-    description = "Reports the embedded instance, access mode, acting user and remaining write budget."
+    description = "Lists records of a TrailBase record API with optional filters, ordering and cursor/offset pagination. Access is enforced server-side by the API's ACLs for the calling user."
+  )]
+  async fn records_list(
+    &self,
+    params: Parameters<RecordsListParams>,
+    ctx: RequestContext<RoleServer>,
+  ) -> Result<CallToolResult, McpError> {
+    let auth = match self.auth_header(&ctx) {
+      Ok(auth) => auth,
+      Err(result) => return Ok(result),
+    };
+    let p = params.0;
+    let api = encode_segment(&p.api)?;
+
+    // Scoped so the (non-Send) serializer is dropped before any await.
+    let query = {
+      let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+      if let Some(limit) = p.limit {
+        serializer.append_pair("limit", &limit.to_string());
+      }
+      if let Some(ref cursor) = p.cursor {
+        serializer.append_pair("cursor", cursor);
+      }
+      if let Some(offset) = p.offset {
+        serializer.append_pair("offset", &offset.to_string());
+      }
+      if let Some(ref order) = p.order
+        && !order.is_empty()
+      {
+        serializer.append_pair("order", &order.join(","));
+      }
+      if p.count == Some(true) {
+        serializer.append_pair("count", "true");
+      }
+      if let Some(ref expand) = p.expand
+        && !expand.is_empty()
+      {
+        serializer.append_pair("expand", &expand.join(","));
+      }
+      let mut query = serializer.finish();
+      if let Some(ref filter) = p.filter
+        && !filter.is_empty()
+      {
+        if !query.is_empty() {
+          query.push('&');
+        }
+        query.push_str(filter);
+      }
+      query
+    };
+
+    let path = if query.is_empty() {
+      format!("{RECORDS_BASE}/{api}")
+    } else {
+      format!("{RECORDS_BASE}/{api}?{query}")
+    };
+    let (status, value) = self.call(&auth, "GET", &path, None).await?;
+    return self.respond(status, value, true);
+  }
+
+  #[tool(description = "Reads a single record by id from a TrailBase record API.")]
+  async fn records_read(
+    &self,
+    params: Parameters<RecordsReadParams>,
+    ctx: RequestContext<RoleServer>,
+  ) -> Result<CallToolResult, McpError> {
+    let auth = match self.auth_header(&ctx) {
+      Ok(auth) => auth,
+      Err(result) => return Ok(result),
+    };
+    let p = params.0;
+    let api = encode_segment(&p.api)?;
+    let id = encode_segment(&p.id)?;
+    let mut path = format!("{RECORDS_BASE}/{api}/{id}");
+    if let Some(ref expand) = p.expand
+      && !expand.is_empty()
+    {
+      // Scoped so the (non-Send) serializer is dropped before any await.
+      let query = {
+        let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+        serializer.append_pair("expand", &expand.join(","));
+        serializer.finish()
+      };
+      path = format!("{path}?{query}");
+    }
+    let (status, value) = self.call(&auth, "GET", &path, None).await?;
+    return self.respond(status, value, true);
+  }
+
+  #[tool(
+    description = "Creates a record via a TrailBase record API. Write access is enforced server-side; in records mode the mutation may require write_confirm."
+  )]
+  async fn records_create(
+    &self,
+    params: Parameters<RecordsCreateParams>,
+    ctx: RequestContext<RoleServer>,
+  ) -> Result<CallToolResult, McpError> {
+    let auth = match self.auth_header(&ctx) {
+      Ok(auth) => auth,
+      Err(result) => return Ok(result),
+    };
+    let p = params.0;
+    let api = encode_segment(&p.api)?;
+    let columns = p.record.keys().cloned().collect::<Vec<_>>().join(", ");
+    return self
+      .guarded_write(
+        &auth,
+        "records_create",
+        format!("create record in '{}' with columns [{columns}]", p.api),
+        "POST",
+        format!("{RECORDS_BASE}/{api}"),
+        Some(Value::Object(p.record)),
+      )
+      .await;
+  }
+
+  #[tool(description = "Partially updates an existing record by id.")]
+  async fn records_update(
+    &self,
+    params: Parameters<RecordsUpdateParams>,
+    ctx: RequestContext<RoleServer>,
+  ) -> Result<CallToolResult, McpError> {
+    let auth = match self.auth_header(&ctx) {
+      Ok(auth) => auth,
+      Err(result) => return Ok(result),
+    };
+    let p = params.0;
+    let api = encode_segment(&p.api)?;
+    let id = encode_segment(&p.id)?;
+    let columns = p.record.keys().cloned().collect::<Vec<_>>().join(", ");
+    return self
+      .guarded_write(
+        &auth,
+        "records_update",
+        format!(
+          "update record '{}' in '{}', columns [{columns}]",
+          p.id, p.api
+        ),
+        "PATCH",
+        format!("{RECORDS_BASE}/{api}/{id}"),
+        Some(Value::Object(p.record)),
+      )
+      .await;
+  }
+
+  #[tool(description = "Deletes a record by id.")]
+  async fn records_delete(
+    &self,
+    params: Parameters<RecordsDeleteParams>,
+    ctx: RequestContext<RoleServer>,
+  ) -> Result<CallToolResult, McpError> {
+    let auth = match self.auth_header(&ctx) {
+      Ok(auth) => auth,
+      Err(result) => return Ok(result),
+    };
+    let p = params.0;
+    let api = encode_segment(&p.api)?;
+    let id = encode_segment(&p.id)?;
+    return self
+      .guarded_write(
+        &auth,
+        "records_delete",
+        format!("delete record '{}' from '{}'", p.id, p.api),
+        "DELETE",
+        format!("{RECORDS_BASE}/{api}/{id}"),
+        None,
+      )
+      .await;
+  }
+
+  #[tool(
+    description = "Executes a record mutation previously parked by records_create/update/delete. Confirming charges the write budget."
+  )]
+  async fn write_confirm(
+    &self,
+    params: Parameters<PendingParams>,
+    ctx: RequestContext<RoleServer>,
+  ) -> Result<CallToolResult, McpError> {
+    let auth = match self.auth_header(&ctx) {
+      Ok(auth) => auth,
+      Err(result) => return Ok(result),
+    };
+    let pending = {
+      let mut guards = self.0.guards.lock().expect("poisoned");
+      match guards.confirm(&params.0.pending_id) {
+        Ok(pending) => pending,
+        Err(err) => return error_result(err.to_string()),
+      }
+    };
+    let (status, value) = self
+      .call(&auth, &pending.method, &pending.path, pending.body.as_ref())
+      .await?;
+    return self.respond(status, value, false);
+  }
+
+  #[tool(
+    description = "Discards a parked record mutation without executing it or charging the budget."
+  )]
+  async fn write_cancel(
+    &self,
+    params: Parameters<PendingParams>,
+  ) -> Result<CallToolResult, McpError> {
+    let cancelled = {
+      let mut guards = self.0.guards.lock().expect("poisoned");
+      guards.cancel(&params.0.pending_id)
+    };
+    return match cancelled {
+      Ok(pending) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(
+        "Cancelled without executing: {}",
+        pending.summary
+      ))])),
+      Err(err) => error_result(err.to_string()),
+    };
+  }
+
+  #[tool(
+    description = "Reports transport, access mode, acting user and remaining write budget of this MCP session."
   )]
   async fn auth_status(&self) -> Result<CallToolResult, McpError> {
     let (confirm, remaining) = {
       let guards = self.0.guards.lock().expect("poisoned");
       (guards.confirm_writes(), guards.budget_remaining())
     };
+    let user = match (&self.0.auth, &self.0.acting_user) {
+      (AuthSource::Fixed(_), Some(user)) => {
+        json!({ "email": user.email, "id": user.id.to_string() })
+      }
+      _ => Value::String("per-request (from the caller's Authorization header)".to_string()),
+    };
     return json_result(&json!({
-      "transport": "in-process (no network listener)",
+      "transport": match self.0.auth {
+        AuthSource::Fixed(_) => "stdio (in-process router, no network listener)",
+        AuthSource::PerRequest => "streamable-http /mcp (in-process router)",
+      },
       "mode": match self.0.mode {
         McpMode::ReadOnly => "read-only",
         McpMode::Records => "records",
       },
-      "user": { "email": self.0.user_email, "id": self.0.user_id.to_string() },
+      "user": user,
       "write_guards": {
         "confirm_writes": confirm,
         "budget_remaining": remaining
@@ -688,7 +836,7 @@ impl ServerHandler for TrailBaseMcp {
     info.capabilities = ServerCapabilities::builder().enable_tools().build();
     info.instructions = Some(
       "TrailBase record tools running inside the `trail` binary. All access \
-       is checked server-side against the acting user's record API ACLs. \
+       is checked server-side against the calling user's record API ACLs. \
        Mutations may return a pending_id: nothing is written until you call \
        write_confirm with it (write_cancel discards)."
         .to_string(),

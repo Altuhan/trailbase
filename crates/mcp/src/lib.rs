@@ -600,6 +600,63 @@ impl TrailBaseMcp {
   }
 
   #[tool(
+    description = "Lists tables and views of the instance (schema introspection): kind, name, hidden flag and the CREATE statement. Read-only server-side metadata; independent of record API ACLs."
+  )]
+  async fn schema_tables(&self) -> Result<CallToolResult, McpError> {
+    #[derive(Deserialize)]
+    struct SchemaRow {
+      r#type: String,
+      name: String,
+      sql: Option<String>,
+    }
+
+    let conn = self
+      .0
+      .state
+      .connection_manager()
+      .main_entry()
+      .connection
+      .clone();
+    let rows: Vec<SchemaRow> = conn
+      .read_query_values::<SchemaRow>(
+        r#"SELECT type, name, sql FROM main.sqlite_schema
+           WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'
+           ORDER BY type, name"#,
+        (),
+      )
+      .await
+      .map_err(internal)?;
+
+    let objects: Vec<Value> = rows
+      .into_iter()
+      .map(|row| {
+        json!({
+          "kind": row.r#type,
+          "name": row.name,
+          // TrailBase convention: leading underscore marks internal tables.
+          "hidden": row.name.starts_with('_'),
+          "sql": row.sql,
+        })
+      })
+      .collect();
+    return json_result(&json!({ "objects": objects }));
+  }
+
+  #[tool(
+    description = "Reports TrailBase version, data directory and the number of configured record APIs."
+  )]
+  async fn instance_info(&self) -> Result<CallToolResult, McpError> {
+    let version = self.0.state.version();
+    let record_apis = self.0.state.access_config(|c| c.record_apis.len());
+    return json_result(&json!({
+      "version": version.git_version_tag,
+      "commit_date": version.git_commit_date.map(|d| d.trim().to_string()),
+      "data_dir": self.0.state.data_dir().root(),
+      "record_apis": record_apis,
+    }));
+  }
+
+  #[tool(
     description = "Reports the embedded instance, access mode, acting user and remaining write budget."
   )]
   async fn auth_status(&self) -> Result<CallToolResult, McpError> {

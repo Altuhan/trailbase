@@ -44,6 +44,8 @@ to a socket). That means:
 | --- | --- | --- |
 | `records_apis` | all | configured record APIs (name + table) |
 | `records_schema` | all | JSON schema of an API's records |
+| `schema_tables` | all | tables/views with CREATE statements (server-side metadata) |
+| `instance_info` | all | version, data dir, record API count |
 | `records_list` / `records_read` | all | reads, with column redaction applied |
 | `records_create` / `records_update` / `records_delete` | `--mode records` | guarded mutations |
 | `write_confirm` / `write_cancel` | `--mode records` | two-phase write flow |
@@ -58,6 +60,13 @@ in read results.
 
 In `--mode read-only` (default) the mutation tools respond with a policy
 error and nothing can be written at all.
+
+## Audit
+
+Because tool calls run through the real router, every `records_*` call is
+logged to `_logs` exactly like a network request — method, URL, status,
+latency and the acting user's id — and shows up in the admin UI's logs view.
+No separate MCP audit trail to maintain.
 
 ## Relation to `examples/mcp-server`
 

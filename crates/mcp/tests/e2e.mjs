@@ -96,6 +96,33 @@ check(status.write_guards.confirm_writes === true, "confirm_writes on");
 check(typeof status.write_guards.budget_remaining === "number" && status.write_guards.budget_remaining <= 99, `budget charged (${status.write_guards.budget_remaining})`);
 check(status.user.email === "seed@localhost", "acting user reported");
 
+// 9. Introspection: schema_tables sees the user table (hidden) and note.
+const schema = asJson(await call("schema_tables"));
+const note = schema.objects.find((o) => o.name === "note");
+const userTable = schema.objects.find((o) => o.name === "_user");
+check(note?.kind === "table" && note?.hidden === false && /CREATE TABLE/i.test(note?.sql ?? ""), "schema_tables lists note with SQL");
+check(userTable?.hidden === true, "_user marked hidden");
+const info = asJson(await call("instance_info"));
+check(info.record_apis === 2, `instance_info counts record APIs (${info.record_apis})`);
+
+// 10. Audit: in-process tool calls are logged to _logs like normal HTTP requests.
+const { DatabaseSync } = await import("node:sqlite");
+let logged = 0;
+for (let i = 0; i < 20; i++) {
+  await new Promise((r) => setTimeout(r, 500));
+  try {
+    const db = new DatabaseSync(`${depot}/data/logs.db`, { readOnly: true });
+    logged = db
+      .prepare("SELECT COUNT(*) AS n FROM _logs WHERE url LIKE '%/api/records/v1/note%'")
+      .get().n;
+    db.close();
+  } catch {
+    // Log DB may be mid-write; retry.
+  }
+  if (logged > 0) break;
+}
+check(logged > 0, `records_* calls audited in _logs (${logged} rows)`);
+
 await client.close();
 console.log(failures === 0 ? "ALL PASS" : `${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

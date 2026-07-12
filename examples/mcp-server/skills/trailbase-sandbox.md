@@ -9,6 +9,11 @@ The `trailbase` MCP server (mode `sandbox`) can spin up an **ephemeral copy** of
 a live TrailBase depot. Schema changes there are recorded as migration files you
 review and apply through the normal deploy — never mutate production directly.
 
+The same workflow exists in the embedded server (`trail mcp --sandbox`,
+stdio): there the tools are `sandbox_ddl` (instead of the `schema_*` family;
+pass `action` + the endpoint `payload`) and `sandbox_query` (instead of
+`admin_query`); create/status/diff/destroy behave identically.
+
 ## When to use
 
 - Any DDL: creating/altering/dropping tables or indexes.

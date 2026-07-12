@@ -21,7 +21,15 @@ TRAIL_MCP_PASSWORD=… trail --data-dir ./traildepot mcp \
   "mcpServers": {
     "trailbase": {
       "command": "trail",
-      "args": ["--data-dir", "/path/to/traildepot", "mcp", "--user", "agent@example.com", "--mode", "records"],
+      "args": [
+        "--data-dir",
+        "/path/to/traildepot",
+        "mcp",
+        "--user",
+        "agent@example.com",
+        "--mode",
+        "records",
+      ],
       "env": { "TRAIL_MCP_PASSWORD": "…" },
     },
   },
@@ -74,18 +82,18 @@ to a socket). That means:
 
 ## Tools
 
-| Tool | Modes | Notes |
-| --- | --- | --- |
-| `records_apis` | all | configured record APIs (name + table) |
-| `records_schema` | all | JSON schema of an API's records |
-| `schema_tables` | all | tables/views with CREATE statements (server-side metadata) |
-| `instance_info` | all | version, data dir, record API count |
-| `records_list` / `records_read` | all | reads, with column redaction applied |
-| `records_create` / `records_update` / `records_delete` | `--mode records` | guarded mutations |
-| `write_confirm` / `write_cancel` | `--mode records` | two-phase write flow |
-| `auth_status` | all | mode, acting user, remaining write budget |
-| `sandbox_create` / `sandbox_status` / `sandbox_destroy` | `--sandbox` (stdio) | ephemeral snapshot instance lifecycle |
-| `sandbox_ddl` / `sandbox_query` / `sandbox_diff` | `--sandbox` (stdio) | schema work recorded as migration files |
+| Tool                                                    | Modes               | Notes                                                      |
+| ------------------------------------------------------- | ------------------- | ---------------------------------------------------------- |
+| `records_apis`                                          | all                 | configured record APIs (name + table)                      |
+| `records_schema`                                        | all                 | JSON schema of an API's records                            |
+| `schema_tables`                                         | all                 | tables/views with CREATE statements (server-side metadata) |
+| `instance_info`                                         | all                 | version, data dir, record API count                        |
+| `records_list` / `records_read`                         | all                 | reads, with column redaction applied                       |
+| `records_create` / `records_update` / `records_delete`  | `--mode records`    | guarded mutations                                          |
+| `write_confirm` / `write_cancel`                        | `--mode records`    | two-phase write flow                                       |
+| `auth_status`                                           | all                 | mode, acting user, remaining write budget                  |
+| `sandbox_create` / `sandbox_status` / `sandbox_destroy` | `--sandbox` (stdio) | ephemeral snapshot instance lifecycle                      |
+| `sandbox_ddl` / `sandbox_query` / `sandbox_diff`        | `--sandbox` (stdio) | schema work recorded as migration files                    |
 
 Write guards (ported from `examples/mcp-server`, design adapted from
 applix-fr/mcp-trailbase): mutations are parked and only executed by
@@ -124,10 +132,16 @@ executable, see `examples/mcp-server/README.md`); this crate ships inside
 
 ## Verification
 
-Unit tests: `cargo test -p trailbase-mcp`. Live end-to-end (spawns the real
-binary, drives park → confirm → redacted read → server-side 403 → cancel over
-MCP): see `tests/e2e.mjs` header for setup; it borrows the MCP SDK from
-`examples/mcp-server/node_modules`.
+Unit tests: `cargo test -p trailbase-mcp`. Live end-to-end (both transports,
+fresh throwaway depot, runs in CI as the `test-mcp` job):
+
+```bash
+cargo build -p trailbase-cli && pnpm install
+crates/mcp/tests/ci-e2e.sh target/debug/trail
+```
+
+Production setup (systemd, reverse proxy, tokens/TTL, checklist):
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## Roadmap
 

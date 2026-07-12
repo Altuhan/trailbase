@@ -18,8 +18,8 @@ use trailbase_cli::wasm::{
 use utoipa::OpenApi;
 
 use trailbase_cli::{
-  AdminSubCommands, CommandLineArgs, ComponentReference, ComponentSubCommands, OpenApiSubCommands,
-  SubCommands, UserSubCommands,
+  AdminSubCommands, CommandLineArgs, ComponentReference, ComponentSubCommands, McpModeArg,
+  OpenApiSubCommands, SubCommands, UserSubCommands,
 };
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -301,6 +301,30 @@ async fn async_main(
           println!("Sent email using system's sendmail");
         }
       };
+    }
+    SubCommands::Mcp(cmd) => {
+      let password = std::env::var(&cmd.password_env).map_err(|_| {
+        format!(
+          "Set the acting user's password in the '{}' environment variable (see --password-env).",
+          cmd.password_env
+        )
+      })?;
+
+      trailbase_mcp::run_stdio(trailbase_mcp::McpOptions {
+        data_dir,
+        public_url,
+        user: cmd.user,
+        password,
+        mode: match cmd.mode {
+          McpModeArg::ReadOnly => trailbase_mcp::McpMode::ReadOnly,
+          McpModeArg::Records => trailbase_mcp::McpMode::Records,
+        },
+        budget_writes: cmd.budget_writes,
+        confirm_writes: cmd.confirm_writes,
+        confirm_timeout_secs: cmd.confirm_timeout_secs,
+        redact_columns: cmd.redact_columns,
+      })
+      .await?;
     }
     SubCommands::Components { cmd } => {
       match cmd {

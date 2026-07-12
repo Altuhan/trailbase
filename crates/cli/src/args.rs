@@ -79,6 +79,10 @@ pub enum SubCommands {
   },
   /// Programmatically send emails.
   Email(EmailArgs),
+  /// Serves the Model Context Protocol over stdio for AI agents/assistants.
+  /// Tool calls act as the given user with record API ACLs enforced
+  /// server-side; no network listener is bound.
+  Mcp(McpArgs),
   /// Manage WASM components
   Components {
     #[command(subcommand)]
@@ -162,6 +166,50 @@ pub struct EmailArgs {
   /// Email body, i.e. the actual message.
   #[arg(long, env)]
   pub body: String,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, Default)]
+pub enum McpModeArg {
+  /// Listing/reading tools only.
+  #[default]
+  ReadOnly,
+  /// Additionally exposes record mutations behind write guards
+  /// (budget + two-phase confirmation).
+  Records,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct McpArgs {
+  /// Email of the user MCP tool calls act as. The user's record API ACLs
+  /// apply server-side; use a dedicated non-admin user with minimal access.
+  #[arg(long, env = "TRAIL_MCP_USER")]
+  pub user: String,
+
+  /// Name of the environment variable holding the acting user's password
+  /// (the password itself must never be passed on the command line).
+  #[arg(long, default_value = "TRAIL_MCP_PASSWORD")]
+  pub password_env: String,
+
+  /// Which tools to expose.
+  #[arg(long, value_enum, default_value_t = McpModeArg::ReadOnly)]
+  pub mode: McpModeArg,
+
+  /// Record mutations allowed per process in records mode; 0 = unlimited.
+  #[arg(long, default_value_t = 100)]
+  pub budget_writes: u32,
+
+  /// Two-phase record mutations: park + write_confirm (records mode).
+  #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+  pub confirm_writes: bool,
+
+  /// Seconds until an unconfirmed mutation expires.
+  #[arg(long, default_value_t = 120)]
+  pub confirm_timeout_secs: u64,
+
+  /// Comma-separated case-insensitive regexes; matching column names are
+  /// masked in read results.
+  #[arg(long, value_delimiter = ',')]
+  pub redact_columns: Vec<String>,
 }
 
 #[derive(Subcommand, Debug, Clone)]

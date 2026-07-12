@@ -1,0 +1,27 @@
+[package]
+name = "trailbase-mcp"
+version = "0.1.0"
+edition = "2024"
+license = "OSL-3.0"
+publish = false
+description = "MCP server embedded into TrailBase: `trail mcp` exposes record tools over stdio with server-enforced ACLs."
+
+[dependencies]
+axum = { workspace = true }
+log = { version = "^0.4.21", default-features = false }
+regex = "1.11.0"
+rmcp = { version = "2.2.0", features = [
+  "server",
+  "transport-io",
+  "transport-streamable-http-server",
+] }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = "2.0.12"
+tokio = { workspace = true, features = ["process"] }
+tower = { version = "0.5.0", features = ["util"] }
+trailbase = { path = "../core" }
+url = { version = "^2.4.1", default-features = false }
+uuid = { workspace = true }

@@ -6,7 +6,7 @@ pub mod wasm;
 
 pub use args::{
   AdminSubCommands, CommandLineArgs, ComponentReference, ComponentSubCommands, EmailArgs,
-  JsonSchemaModeArg, SubCommands, UserSubCommands,
+  JsonSchemaModeArg, McpArgs, McpModeArg, SubCommands, UserSubCommands,
 };
 
 pub use args::OpenApiSubCommands;
